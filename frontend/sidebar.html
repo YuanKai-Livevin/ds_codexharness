@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>HARNESS 记忆面板</title>
+<link rel="stylesheet" href="sidebar.css" />
+</head>
+<body data-theme="light">
+  <aside class="panel" id="memory-panel">
+
+    <!-- 头部：标题 / 计数 / Token 水位进度条 -->
+    <header class="panel-head" id="memory-header">
+      <div class="head-top">
+        <span class="panel-title">🧠 记忆面板</span>
+        <span class="svc-badge" id="svc-badge">连接中…</span>
+        <div class="mode-toggle" id="mode-toggle" title="操作模式：简单=一键操作，专业=完整功能">
+          <button data-mode="simple" id="mode-simple">简单</button>
+          <button data-mode="pro" id="mode-pro">专业</button>
+        </div>
+        <button class="icon-btn" id="theme-toggle" title="切换明暗主题">🌙</button>
+      </div>
+      <div class="head-sub">
+        <span id="block-count">0 个记忆块</span>
+        <span id="pool-tokens">记忆池 0 tok</span>
+      </div>
+      <div class="progress-wrap">
+        <div class="progress-track">
+          <div class="progress-fill" id="token-bar"></div>
+          <div class="progress-marks"><i style="left:86.7%"></i></div>
+        </div>
+        <div class="progress-meta">
+          <span id="token-text">上下文 0 / 60k tokens</span>
+          <span id="watermark-level" class="wm-ok">正常</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- 卡片列表容器 -->
+    <main class="list" id="memory-list"></main>
+
+    <!-- 底部工具栏：只有「阶段总结」一个入口 -->
+    <footer class="panel-foot" id="memory-footer">
+      <button class="btn primary" id="btn-phase" title="生成当前阶段总结并归档旧记忆">📋 阶段总结</button>
+    </footer>
+  </aside>
+
+  <!-- 阶段总结 弹窗 -->
+  <div class="modal" id="phase-modal" hidden>
+    <div class="modal-card phase-card">
+      <div class="modal-head">
+        <h4>📋 阶段总结</h4>
+        <button class="x" id="phase-close" title="关闭">✕</button>
+      </div>
+      <label>本阶段说明（可选，帮助总结更精准）
+        <textarea id="phase-goal" class="phase-goal" placeholder="例如：完成 2025 年销售数据汇总与同比分析"></textarea>
+      </label>
+      <div class="modal-actions">
+        <button class="btn" id="phase-gen">✨ 生成总结</button>
+        <button class="rollback-link advanced" id="phase-history" style="margin-left:auto">查看阶段记录</button>
+      </div>
+      <pre class="phase-preview" id="phase-preview" hidden></pre>
+      <div class="phase-auto-note" id="phase-auto-note" hidden>
+        ⚠ 上下文已达红线，已自动生成总结。确认后将归档旧记忆并开启新阶段对话。
+      </div>
+      <label class="phase-check">
+        <input type="checkbox" id="phase-new-thread" />
+        <span>同时开启新阶段对话（新对话首条消息 = 阶段总结，释放上下文）</span>
+      </label>
+      <div class="modal-actions">
+        <button class="btn" id="phase-cancel">取消</button>
+        <button class="btn primary" id="phase-confirm" disabled>确认并归档</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 阶段记录 弹窗 -->
+  <div class="modal" id="phases-modal" hidden>
+    <div class="modal-card phase-card">
+      <div class="modal-head">
+        <h4>📚 阶段记录</h4>
+        <button class="x" id="phases-close" title="关闭">✕</button>
+      </div>
+      <div class="phases-list" id="phases-list">
+        <div class="phase-empty">暂无阶段记录</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- 手动添加 / 编辑 弹窗 -->
+  <div class="modal" id="add-modal" hidden>
+    <div class="modal-card">
+      <h4 id="add-modal-title">添加记忆块</h4>
+      <label>类型
+        <select id="add-type">
+          <option value="fact">事实</option>
+          <option value="preference">偏好</option>
+          <option value="task">任务</option>
+          <option value="code_snippet">代码片段</option>
+          <option value="plan">计划</option>
+          <option value="constraint">约束</option>
+          <option value="user_defined">自定义</option>
+        </select>
+      </label>
+      <label>内容（建议 ≤ 50 字）
+        <textarea id="add-content" maxlength="500" placeholder="例如：销售汇总必须导出为 xlsx 格式"></textarea>
+      </label>
+      <label>重要性
+        <select id="add-importance">
+          <option value="1">1 - 低</option>
+          <option value="2">2</option>
+          <option value="3" selected>3 - 中</option>
+          <option value="4">4</option>
+          <option value="5">5 - 高（受保护）</option>
+        </select>
+      </label>
+      <div class="modal-actions">
+        <button class="btn" id="add-cancel">取消</button>
+        <button class="btn primary" id="add-save">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 压缩无效建议交接 弹窗 -->
+  <div class="modal" id="suggest-modal" hidden>
+    <div class="modal-card">
+      <h4>💡 建议生成交接</h4>
+      <p style="font-size:12px;line-height:1.7;color:var(--text-dim)" id="suggest-text">
+        本轮压缩 Token 减少不足 15%，继续压缩收益有限。建议生成交接文档并开启新一轮记忆。
+      </p>
+      <div class="modal-actions">
+        <button class="btn" id="suggest-no">暂不</button>
+        <button class="btn primary" id="suggest-go">去生成交接</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 交接文档预览弹窗（默认隐藏） -->
+  <div class="modal" id="handoff-modal" hidden>
+    <div class="modal-card handoff-card">
+      <div class="modal-head">
+        <h4>📋 交接文档预览</h4>
+        <button class="x" id="handoff-close" title="关闭">✕</button>
+      </div>
+      <div class="handoff-meta" id="handoff-meta"></div>
+      <pre class="handoff-body" id="handoff-body"></pre>
+      <div class="modal-actions">
+        <button class="btn" id="handoff-copy">复制</button>
+        <button class="rollback-link" id="handoff-rollback" title="紧急回滚：恢复 30 分钟前快照">回滚</button>
+        <button class="btn primary" id="handoff-confirm">确认交接</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 顶部 Toast（红色错误提示） -->
+  <div class="toast" id="toast" hidden></div>
+
+<script src="sidebar.js"></script>
+</body>
+</html>

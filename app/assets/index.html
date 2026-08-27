@@ -1,0 +1,261 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>中航光电 HARNESS</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="app">
+    <!-- 顶栏 -->
+    <header id="topbar">
+      <div class="brand">
+        <img class="brand-logo" src="lightlogo.png" alt="logo" title="中航光电 HARNESS" />
+        <div>
+          <div class="title-row">
+            <span class="title">JONHON</span>
+            <span class="harness-badge">HARNESS</span>
+            <span class="ver-badge">v0.3</span>
+          </div>
+          <div class="subtitle" id="topbar-ws" title="">本地 · 严谨 · 高效</div>
+        </div>
+      </div>
+      <!-- 权限模式切换 -->
+      <div class="mode-switch" id="mode-switch" title="切换权限模式">
+        <span class="mode-option" data-mode="read">只读</span>
+        <span class="mode-option" data-mode="write">读写</span>
+        <span class="mode-option" data-mode="danger">全权限</span>
+        <span class="mode-slider" id="mode-slider"></span>
+      </div>
+    </header>
+
+    <div id="main">
+      <!-- 侧栏 -->
+      <aside id="sidebar">
+        <section class="card session-panel">
+          <div class="panel-head">
+            <h3>任务会话</h3>
+            <button id="btn-new-session" class="btn btn-small btn-primary" title="新建会话">＋ 新对话</button>
+          </div>
+          <div id="session-list" class="session-list">
+            <div class="fs-empty">还没有会话，点「＋ 新对话」开始</div>
+          </div>
+        </section>
+
+        <section class="card ws-card">
+          <h3>当前工作区</h3>
+          <div id="ws-warn" class="hint hidden" style="color:#f25a5a"></div>
+          <div class="row">
+            <button id="btn-add-ws" class="btn btn-small btn-primary btn-block" title="选择一个文件夹作为工作区（可添加多个）">＋ 添加工作区</button>
+          </div>
+          <div id="ws-recent" class="ws-recent"></div>
+        </section>
+
+        <section class="card file-panel">
+          <h3 class="panel-head">
+            <span>工作区文件</span>
+            <button id="btn-fs-refresh" class="btn btn-small" title="刷新">⟳</button>
+          </h3>
+          <div id="fs-crumb" class="fs-crumb"></div>
+          <div id="fs-list" class="fs-list"></div>
+        </section>
+
+        <section class="card memory-panel-card">
+          <div class="panel-head memory-head">
+            <h3>🧠 记忆面板</h3>
+            <span id="mem-wm" class="mem-wm wm-ok" title="上下文水位">正常</span>
+            <button id="btn-mem-open" class="btn btn-small" title="在新窗口打开记忆面板">⧉</button>
+          </div>
+          <div class="mem-progress" title="对话上下文用量（52K 警戒 / 60K 红线）">
+            <div class="mem-progress-track"><div class="mem-progress-fill" id="mem-bar"></div></div>
+            <span id="mem-text">上下文 0 / 60k tokens</span>
+          </div>
+          <div id="memory-frame-wrap" class="memory-frame-wrap">
+            <iframe id="memory-frame" title="记忆面板（记忆块管理 · 阶段总结 · 压缩交接）"></iframe>
+          </div>
+          <div id="mem-offline" class="mem-offline hidden">
+            <span>记忆服务未运行</span>
+            <button id="btn-mem-retry" class="btn btn-small">重试</button>
+          </div>
+        </section>
+
+        <section class="card skills-panel">
+          <h3 class="panel-head" id="skills-head">
+            <span id="skills-toggle">▸ SKILLS 仓库</span>
+            <button id="btn-skills-add" class="btn btn-small btn-primary" title="添加 SKILL">＋</button>
+          </h3>
+          <div id="skills-body" class="skills-body hidden">
+            <div class="skills-tip">与助手对话即可创建/修改技能，助手会按你的意图优先调用匹配的技能。</div>
+            <div id="skills-list" class="skills-list">
+              <div class="fs-empty">加载中…</div>
+            </div>
+          </div>
+        </section>
+      </aside>
+
+      <!-- 对话区 -->
+      <section id="chat">
+        <div id="messages">
+          <!-- 空态背景：用户尚未问答时显示 logo 铺满 -->
+          <div id="chat-empty-bg" class="chat-empty-bg">
+            <img src="logo.jpg" alt="JONHON Harness" />
+          </div>
+        </div>
+        <div id="composer-wrap">
+          <div id="refs-bar" class="refs-bar"></div>
+          <div id="mention-panel" class="mention-panel hidden">
+            <div class="mention-title">选择要引用的工作区文件（输入 @ 后可继续过滤）</div>
+            <div id="mention-list" class="mention-list"></div>
+            <div id="mention-empty" class="mention-empty hidden">工作区中没有可引用的文件</div>
+          </div>
+          <div id="run-bar" class="run-bar hidden">
+            <span id="run-spinner" class="run-spinner"></span>
+            <span id="run-text">任务运行中…</span>
+            <span id="run-ctx" class="run-ctx"></span>
+            <button id="btn-interrupt" class="btn btn-small btn-ghost">■ 停止</button>
+          </div>
+          <textarea id="composer" rows="3" placeholder="描述你的办公任务，例如：把这两个 Excel 合并……（输入 @ 可引用工作区文件，Enter 发送，Shift+Enter 换行）"></textarea>
+          <div id="composer-actions">
+            <div id="refs-clear" class="refs-clear hidden">清除引用</div>
+            <button id="btn-send" class="btn btn-primary">发送</button>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <!-- 左下角浮动设置按钮（仅图标） -->
+  <button id="btn-settings" class="fab-settings" title="设置">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+  </button>
+
+  <!-- 技能添加菜单 -->
+  <div id="skills-add-menu" class="skills-add-menu hidden">
+    <div class="skills-add-item" data-action="create">✍️ 创建自定义 SKILL</div>
+    <div class="skills-add-item" data-action="import">📥 导入 SKILL</div>
+  </div>
+
+  <!-- 导入 SKILL 说明弹窗 -->
+  <div id="modal-import-skill" class="modal-mask hidden">
+    <div class="modal">
+      <h2>导入 SKILL</h2>
+      <p style="margin-bottom:8px">一个 SKILL 就是一个文件夹，内含 <code style="background:#eeece6;color:#c2401a;padding:1px 4px;border-radius:4px;font-family:var(--mono)">SKILL.md</code> 文件：</p>
+      <pre class="code-block">skill-name/
+└── SKILL.md</pre>
+      <p style="margin-bottom:8px">SKILL.md 格式（YAML frontmatter 声明 name 与 description）：</p>
+      <pre class="code-block">---
+name: skill-name
+description: 一句话描述技能用途
+---
+# 技能说明与执行步骤</pre>
+      <p class="sandbox-tip" style="margin-bottom:4px">两种导入方式：</p>
+      <ul class="onboard-list">
+        <li><strong>选择文件夹</strong>：选择包含技能文件夹的目录，应用会自动复制到技能仓库；</li>
+        <li><strong>手动放置</strong>：直接把技能文件夹放到 <code>%APPDATA%\OfficeHarness\skills</code> 目录。</li>
+      </ul>
+      <div class="modal-actions">
+        <button id="btn-import-pick" class="btn btn-primary">选择文件夹导入…</button>
+        <button id="btn-import-cancel" class="btn btn-ghost">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 设置弹窗 -->
+  <div id="modal-settings" class="modal-mask hidden">
+    <div class="modal">
+      <h2>设置</h2>
+      <div class="form">
+        <label>API 提供商
+          <select id="set-provider">
+            <option value="deepseek">DeepSeek</option>
+            <option value="custom">自定义（OpenAI 兼容）</option>
+          </select>
+        </label>
+        <label>API 基地址
+          <input type="text" id="set-base" placeholder="https://api.deepseek.com/" />
+        </label>
+        <label>模型
+          <input type="text" id="set-model" placeholder="deepseek-v4-flash" />
+        </label>
+        <label>API Key（加密保存到本机，用于自动启动引擎）
+          <div class="row">
+            <input type="password" id="set-key" placeholder="sk-..." style="flex:1" />
+            <span id="key-status" class="hint" style="white-space:nowrap"></span>
+          </div>
+          <div class="sandbox-tip" id="key-current">当前使用：—</div>
+        </label>
+        <label class="row" style="align-items:center;gap:8px;font-size:13px;color:var(--label-secondary)">
+          <input type="checkbox" id="set-noauth" style="width:16px;height:16px;accent-color:var(--brand-500)" />
+          内网部署，无需 API Key（OpenAI 兼容 Responses 接口）
+          <div class="sandbox-tip" style="width:100%">勾选后 Key 可留空。注意：内网地址需支持 OpenAI Responses 接口（{基地址}/responses），仅支持 chat/completions 的网关不可用。</div>
+        </label>
+        <label class="row" style="align-items:center;gap:8px;font-size:13px;color:var(--label-secondary)">
+          <input type="checkbox" id="set-bridge" style="width:16px;height:16px;accent-color:var(--brand-500)" />
+          使用内置翻译层（Responses ↔ Chat 适配）
+          <div class="sandbox-tip" style="width:100%">内网网关仅支持 chat/completions 时勾选：工具本地自动把引擎的 /responses 请求翻译成 /chat/completions 转发，无需外部代理。已支持 /responses 的网关请保持不勾选。</div>
+        </label>
+        <label>模型连通性测试
+          <div class="row">
+            <button id="btn-test-conn" class="btn btn-small">测试连接</button>
+            <span id="test-result" class="test-result"></span>
+          </div>
+        </label>
+        <label>Windows 沙箱方式
+          <select id="set-winsandbox">
+            <option value="unelevated">受限令牌（推荐，免授权开箱即用）</option>
+            <option value="elevated">增强沙箱（需一次 UAC 授权）</option>
+          </select>
+          <div class="sandbox-tip" id="winsandbox-tip"></div>
+        </label>
+        <label>日志目录（引擎日志保存位置）
+          <input type="text" id="set-logdir" placeholder="C:\HARNESS\logs" />
+          <div class="sandbox-tip">默认：C:\HARNESS\logs。引擎运行日志会写入该目录下的 harness.log。</div>
+        </label>
+      </div>
+      <div class="modal-actions">
+        <button id="btn-settings-cancel" class="btn btn-ghost">取消</button>
+        <button id="btn-settings-save" class="btn btn-primary">保存</button>
+      </div>
+      <div class="sandbox-tip" style="margin-top:10px;text-align:center">中航光电 HARNESS v0.3 · 内置 Python 3.12 + Codex 引擎</div>
+    </div>
+  </div>
+
+  <!-- 危险操作审批弹窗 -->
+  <div id="modal-approval" class="modal-mask hidden">
+    <div class="modal modal-danger">
+      <h2>⚠ 危险操作警告</h2>
+      <p class="approval-reason" id="ap-reason"></p>
+      <div id="ap-kind" class="chip chip-warn"></div>
+      <pre id="ap-command" class="code-block"></pre>
+      <div id="ap-changes" class="code-block hidden"></div>
+      <p class="hint">请确认以下操作只涉及工作区内的文件。若不确定，请选择「拒绝」。</p>
+      <div class="modal-actions">
+        <button id="btn-ap-deny" class="btn btn-danger">拒绝</button>
+        <button id="btn-ap-allow" class="btn btn-primary">允许执行</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 首次使用引导 -->
+  <div id="modal-onboard" class="modal-mask hidden">
+    <div class="modal">
+      <h2>欢迎使用中航光电 HARNESS 👋</h2>
+      <p>我是您的本地办公自动化专家，职责范围仅限<strong>工作区目录</strong>：</p>
+      <ul class="onboard-list">
+        <li>📊 合并/清洗/分析 Excel、CSV 数据</li>
+        <li>📝 批量生成或编辑 Word 文档</li>
+        <li>📑 整理 PowerPoint、提取/合并 PDF</li>
+        <li>🖼 图片批量处理与办公素材整理</li>
+      </ul>
+      <p>安全承诺：所有文件操作严格限制在工作区内；删除、覆盖、重命名等破坏性操作会先征求您的确认；尝试越界访问会被立即拒绝。</p>
+      <div class="modal-actions">
+        <button id="btn-onboard-go" class="btn btn-primary">开始使用</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="toast" class="toast hidden"></div>
+  <script src="app.js"></script>
+</body>
+</html>

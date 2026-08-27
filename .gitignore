@@ -1,0 +1,39 @@
+# ===== 构建产物 =====
+/target/
+/dist/
+
+# ===== 运行时与下载物（可由 scripts/ 重新获取） =====
+/runtime/
+/vendor/
+/codex-main/
+
+# ===== Node =====
+/node_modules/
+
+# ===== Python =====
+__pycache__/
+*.pyc
+
+# ===== Tauri 生成物 =====
+/app/gen/
+
+# ===== 诊断/临时文件 =====
+/dbg_stderr.txt
+/dsh-assets/
+
+# ===== 本地临时与日志 =====
+*.log
+.tmp*
+/tmp/
+
+# ===== 运行期工作区数据（按工作区生成，不入库） =====
+**/.harness-memory/
+**/.oh_tmp/
+**/.oh_convert/
+
+# ===== 系统 =====
+.DS_Store
+Thumbs.db
+
+# ===== ɢ������� =====
+/office-harness.exe

@@ -1,0 +1,5 @@
+# HARNESS 记忆面板后端依赖（Python 3.10+，已装入内置 runtime/python312）
+fastapi>=0.110
+uvicorn[standard]>=0.29
+tiktoken>=0.7
+requests>=2.31
