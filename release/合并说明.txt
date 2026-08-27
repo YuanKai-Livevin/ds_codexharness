@@ -1,0 +1,25 @@
+# JONHON Harness v0.3.0 分卷包说明
+
+由于 GitHub 单文件上限 100MB，最终安装包（OfficeHarness-v0.3.zip，279.7MB）
+被拆分为以下分卷（均为 Git 文件，可正常下载）：
+
+    OfficeHarness-v0.3.zip.001  (90.0 MB)
+    OfficeHarness-v0.3.zip.002  (90.0 MB)
+    OfficeHarness-v0.3.zip.003  (90.0 MB)
+    OfficeHarness-v0.3.zip.004  ( 9.7 MB)
+
+## 合并方法
+
+### Windows 一键合并（推荐）
+
+下载全部 4 个分卷放到同一文件夹，双击 `合并.bat`，
+得到 `OfficeHarness-v0.3.zip`，解压后双击 `OfficeHarness.exe` 即可运行。
+
+### 命令行手动合并
+
+    copy /b OfficeHarness-v0.3.zip.001+OfficeHarness-v0.3.zip.002+OfficeHarness-v0.3.zip.003+OfficeHarness-v0.3.zip.004 OfficeHarness-v0.3.zip
+
+## 说明
+
+- 分卷来自 `dist\OfficeHarness-v0.3.zip`（源码构建产物，解压后整体使用：exe + runtime + codex-bin + memory-block 需保持同目录）。
+- 完整源码见仓库根目录；构建方法见 README.md。
