@@ -1,6 +1,6 @@
-﻿//! 引擎生命周期与消息命令：启动/停止/发送/审批/中断/沙箱。
+//! 引擎生命周期与消息命令：启动/停止/发送/审批/中断/沙箱。
 
-use crate::app_state::{data_root, AppState, MEMORY_PORT};
+use crate::app_state::{data_root, AppState, EngineState, MEMORY_PORT};
 use crate::services::memory_sidecar::{
     memory_block_dir, parse_input_tokens, spawn_memory_server, write_conversation_tokens,
 };
@@ -11,15 +11,52 @@ use oh_core::{scanner, workspace};
 use std::sync::atomic::Ordering;
 use tauri::{AppHandle, Emitter, Manager, State};
 
+/// 统一状态写入：engine_state 为唯一真相源，engine_running 为镜像。
+async fn set_engine_state(app: &AppHandle, s: EngineState) {
+    let state = app.state::<AppState>();
+    *state.engine_state.lock().await = s;
+    state.engine_running.store(s.is_running(), Ordering::SeqCst);
+}
+
 /// 启动引擎（内部实现；api_key 为空时尝试使用已保存的 Key）。
+/// 任何失败都会把状态置为 Failed（前端可一键重启）。
 pub(crate) async fn start_engine_inner(
     app: &AppHandle,
     state: &State<'_, AppState>,
     api_key: String,
 ) -> Result<(), String> {
-    if state.engine_running.load(Ordering::SeqCst) {
-        return Err("引擎已在运行中。".to_string());
+    let res = start_engine_inner_impl(app, state, api_key).await;
+    if res.is_err() {
+        let st = *state.engine_state.lock().await;
+        // 只在仍处于 Starting（未成功也未主动停止）时标记失败
+        if st == EngineState::Starting {
+            *state.engine_state.lock().await = EngineState::Failed;
+            state.engine_running.store(false, Ordering::SeqCst);
+            let _ = app.emit(
+                "oh-event",
+                EngineEvent::Status {
+                    state: "failed".into(),
+                    detail: res.as_ref().unwrap_err().clone(),
+                },
+            );
+        }
     }
+    res
+}
+
+async fn start_engine_inner_impl(
+    app: &AppHandle,
+    state: &State<'_, AppState>,
+    api_key: String,
+) -> Result<(), String> {
+    {
+        let st = *state.engine_state.lock().await;
+        if st.is_running() || st == EngineState::Starting || st == EngineState::Stopping {
+            return Err("引擎已在运行中或正在启动/停止。".to_string());
+        }
+    }
+    *state.engine_state.lock().await = EngineState::Starting;
+    state.engine_running.store(false, Ordering::SeqCst);
     let settings = state.settings.lock().await.clone();
     let bundled = Bundled::new(app.path().resource_dir().ok().as_deref());
 
@@ -106,16 +143,41 @@ pub(crate) async fn start_engine_inner(
         .await
         .map_err(|e| format!("创建会话失败: {}", e))?;
 
-    // 事件转发任务（同时把真实上下文 tokens 写入记忆面板水位文件）
+    // 事件转发任务（同时更新状态机：Busy/Ready/崩溃 Failed + 写入记忆水位）
     let mut rx = server.take_events().ok_or("事件通道不可用")?;
     let handle = app.clone();
     let mem_data = memory_block_dir(&ws).join("data");
     tauri::async_runtime::spawn(async move {
         while let Some(ev) = rx.recv().await {
-            if let EngineEvent::TurnCompleted { usage, .. } = &ev {
-                if let Some(tokens) = parse_input_tokens(usage) {
-                    write_conversation_tokens(&mem_data, tokens).await;
+            match &ev {
+                EngineEvent::TurnStarted { .. } => {
+                    set_engine_state(&handle, EngineState::Busy).await;
                 }
+                EngineEvent::TurnCompleted { .. } => {
+                    set_engine_state(&handle, EngineState::Ready).await;
+                    if let EngineEvent::TurnCompleted { usage, .. } = &ev {
+                        if let Some(tokens) = parse_input_tokens(usage) {
+                            write_conversation_tokens(&mem_data, tokens).await;
+                        }
+                    }
+                }
+                EngineEvent::EngineStopped => {
+                    // 非预期退出 → Failed；主动停止（Stopping）→ Stopped
+                    let st = *handle.state::<AppState>().engine_state.lock().await;
+                    if st == EngineState::Stopping {
+                        set_engine_state(&handle, EngineState::Stopped).await;
+                    } else {
+                        set_engine_state(&handle, EngineState::Failed).await;
+                        let _ = handle.emit(
+                            "oh-event",
+                            EngineEvent::Status {
+                                state: "failed".into(),
+                                detail: "引擎进程异常退出，可重新启动。".into(),
+                            },
+                        );
+                    }
+                }
+                _ => {}
             }
             let _ = handle.emit("oh-event", ev);
         }
@@ -140,6 +202,7 @@ pub(crate) async fn start_engine_inner(
     *state.api_key.lock().await = Some(key);
     *state.engine_pid.lock().await = server.pid();
     *state.engine.lock().await = Some(server);
+    *state.engine_state.lock().await = EngineState::Ready;
     state.engine_running.store(true, Ordering::SeqCst);
     let _ = app.emit(
         "oh-event",
@@ -163,12 +226,14 @@ pub(crate) async fn start_engine(
 
 #[tauri::command]
 pub(crate) async fn stop_engine(state: State<'_, AppState>) -> Result<(), String> {
+    *state.engine_state.lock().await = EngineState::Stopping;
     let mut guard = state.engine.lock().await;
     if let Some(server) = guard.as_mut() {
         server.stop().await;
     }
     *guard = None;
     *state.engine_pid.lock().await = None;
+    *state.engine_state.lock().await = EngineState::Stopped;
     state.engine_running.store(false, Ordering::SeqCst);
     Ok(())
 }

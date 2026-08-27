@@ -2,12 +2,40 @@
 
 use oh_core::codex::CodexServer;
 use oh_core::config::AppSettings;
+use serde::Serialize;
 use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use tokio::sync::Mutex;
 
 /// 记忆面板/翻译层服务端口（与 oh-core 常量保持一致）。
 pub(crate) const MEMORY_PORT: u16 = oh_core::MEMORY_PORT;
+
+/// 统一引擎状态机（T0-06）：由本状态为唯一真相源，前端只消费这一个状态。
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+pub(crate) enum EngineState {
+    Stopped,
+    Starting,
+    Ready,
+    Busy,
+    Stopping,
+    Failed,
+}
+
+impl EngineState {
+    pub(crate) fn is_running(self) -> bool {
+        matches!(self, EngineState::Ready | EngineState::Busy)
+    }
+    pub(crate) fn as_str(self) -> &'static str {
+        match self {
+            EngineState::Stopped => "stopped",
+            EngineState::Starting => "starting",
+            EngineState::Ready => "ready",
+            EngineState::Busy => "busy",
+            EngineState::Stopping => "stopping",
+            EngineState::Failed => "failed",
+        }
+    }
+}
 
 pub(crate) struct AppState {
     pub(crate) settings_path: PathBuf,
@@ -17,6 +45,7 @@ pub(crate) struct AppState {
     pub(crate) engine: Mutex<Option<CodexServer>>,
     pub(crate) engine_pid: Mutex<Option<u32>>,
     pub(crate) engine_running: AtomicBool,
+    pub(crate) engine_state: Mutex<EngineState>,
     pub(crate) memory_pid: Mutex<Option<u32>>,
 }
 

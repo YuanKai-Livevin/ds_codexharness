@@ -38,6 +38,7 @@ pub fn run() {
             engine: Mutex::new(None),
             engine_pid: Mutex::new(None),
             engine_running: AtomicBool::new(false),
+            engine_state: Mutex::new(app_state::EngineState::Stopped),
             memory_pid: Mutex::new(None),
         })
         .invoke_handler(tauri::generate_handler![

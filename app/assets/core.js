@@ -139,7 +139,7 @@ function setEngineChip(stateStr, detail) {
   const sendBtn = $("#btn-send");
   if (stateStr === "starting") {
     if (sendBtn) sendBtn.disabled = true;
-  } else if (stateStr === "error") {
+  } else if (stateStr === "error" || stateStr === "failed") {
     if (sendBtn) sendBtn.disabled = true;
   } else if (stateStr === "running" || state.running) {
     if (sendBtn) sendBtn.disabled = false;

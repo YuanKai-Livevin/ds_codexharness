@@ -1,6 +1,6 @@
-﻿//! 设置相关 Tauri 命令：设置读写、API Key、连通性测试、状态查询。
+//! 设置相关 Tauri 命令：设置读写、API Key、连通性测试、状态查询。
 
-use crate::app_state::AppState;
+use crate::app_state::{AppState, EngineState};
 use oh_core::config::AppSettings;
 use oh_core::dpapi;
 use oh_core::python::Bundled;
@@ -12,6 +12,7 @@ use tauri::{AppHandle, Manager, State};
 #[derive(Serialize, Clone)]
 pub(crate) struct StatusInfo {
     running: bool,
+    engine_state: String,
     workspace: String,
     sandbox: String,
     model: String,
@@ -46,6 +47,7 @@ pub(crate) async fn save_settings(state: State<'_, AppState>, settings: AppSetti
         }
         *guard = None;
         *state.engine_pid.lock().await = None;
+        *state.engine_state.lock().await = EngineState::Stopped;
         state.engine_running.store(false, Ordering::SeqCst);
     }
     let mut cur = state.settings.lock().await;
@@ -181,6 +183,7 @@ pub(crate) async fn get_status(state: State<'_, AppState>, app: AppHandle) -> Re
     let bundled = Bundled::new(app.path().resource_dir().ok().as_deref());
     Ok(StatusInfo {
         running: state.engine_running.load(Ordering::SeqCst),
+        engine_state: state.engine_state.lock().await.as_str().to_string(),
         workspace: s.workspace_path,
         sandbox: s.sandbox_mode,
         model: s.model,

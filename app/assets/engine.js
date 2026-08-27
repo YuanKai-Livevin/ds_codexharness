@@ -41,6 +41,10 @@ function handleEvent(ev) {
         // 引导用户补全配置
         if (ev.detail && ev.detail.includes("API Key")) openSettings();
       }
+      if (ev.state === "failed") {
+        state.running = false;
+        toast(ev.detail || "引擎异常退出", "err");
+      }
       break;
     case "log":
       console.log("[engine]", ev.level, ev.msg);
@@ -324,7 +328,17 @@ async function refreshStatus() {
     const s = await invoke("get_status");
     state.running = s.running;
     state.workspace = s.workspace || "";
-    setEngineChip(s.running ? "running" : "off", "");
+    // 单一状态机：ready/busy → 运行中；failed → 失败；starting → 启动中；其余 → 停止
+    const es = s.engine_state || (s.running ? "ready" : "stopped");
+    if (es === "ready" || es === "busy") {
+      setEngineChip("running", "");
+    } else if (es === "starting") {
+      setEngineChip("starting", "");
+    } else if (es === "failed") {
+      setEngineChip("failed", "");
+    } else {
+      setEngineChip("off", "");
+    }
     if (!s.python_ok || !s.codex_ok) {
       toast("缺少运行组件：请把本程序与 runtime/、codex-bin/ 放在同一目录", "warn");
     }
