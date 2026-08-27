@@ -696,7 +696,9 @@ async fn start_engine_inner(
     std::fs::create_dir_all(&skills_repo).map_err(|e| format!("无法创建技能仓库: {}", e))?;
     let skills_repo_str = skills_repo.to_string_lossy().to_string();
 
-    // 拉起记忆面板后端（记忆块管理 + 真实上下文水位），失败不阻塞引擎
+    // 拉起记忆面板后端（记忆块管理 + 真实上下文水位 + 可选翻译层）
+    // 普通模式：失败不阻塞引擎；开启翻译层（use_bridge）时引擎依赖本地 /responses 服务，
+    // 必须 fail-closed —— 服务起不来就拒绝启动，避免请求发往错误/失效进程（T0-03）。
     match spawn_memory_server(app, state, &bundled, &ws, &key).await {
         Ok(pid) => {
             let _ = app.emit(
@@ -715,6 +717,12 @@ async fn start_engine_inner(
                     msg: format!("记忆面板服务启动失败：{}", e),
                 },
             );
+            if settings.use_bridge {
+                return Err(format!(
+                    "已开启「内置翻译层」，但本地翻译服务启动失败（{}）。已停止启动引擎，避免请求发往不可用服务。请检查端口 8765 是否被占用后重试。",
+                    e
+                ));
+            }
         }
     }
 

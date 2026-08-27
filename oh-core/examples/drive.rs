@@ -30,6 +30,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         api_key_enc: None,
         recent_workspaces: Vec::new(),
         log_dir: "".into(),
+        no_auth: false,
+        use_bridge: false,
     };
 
     println!("== prepare_home ==");

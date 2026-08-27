@@ -1,4 +1,4 @@
-//! 工作区沙箱：路径规范化、越界检测、系统目录黑名单。
+//! 工作区沙箱：路径规范化、越界检测、系统目录黑名单、最终路径（junction/symlink）防护。
 
 use std::path::{Component, Path, PathBuf};
 
@@ -25,6 +25,28 @@ const SYSTEM_DIRS: &[&str] = &[
     "\\\\",
 ];
 
+/// 禁止选为工作区的目录（含应用自身数据目录，避免把配置/密钥放进工作区）。
+const REJECTED_WORKSPACES: &[&str] = &[
+    "c:\\windows",
+    "c:\\program files",
+    "c:\\program files (x86)",
+    "c:\\programdata",
+    "c:\\harness",
+    "c:\\system volume information",
+    "c:\\recovery",
+    "c:\\$recycle.bin",
+    "/",
+    "/etc",
+    "/usr",
+    "/bin",
+    "/sbin",
+    "/var",
+    "/root",
+    "/system",
+    "/library",
+    "/applications",
+];
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EscapeIssue {
     /// 命中的原文片段。
@@ -49,8 +71,27 @@ pub fn ensure_workspace(path: &str) -> Result<PathBuf, String> {
         ));
     }
     let canon = canonicalize_loose(&p);
+    if is_rejected_workspace(&canon) {
+        return Err(format!(
+            "该路径是系统目录或应用数据目录，禁止作为工作区：{}\n请选择工作区内的普通文件夹（如 桌面\\xx\\工作文件夹）。",
+            canon.display()
+        ));
+    }
     std::fs::create_dir_all(&canon).map_err(|e| format!("无法创建工作区目录 {}: {}", canon.display(), e))?;
     Ok(canon)
+}
+
+/// 判断路径是否属于被拒绝的工作区（盘符根目录 / 系统目录 / 应用数据目录）。
+fn is_rejected_workspace(p: &Path) -> bool {
+    let canon = canonicalize_loose(p);
+    // 盘符根目录（C:\、D:\）或文件系统根（/）
+    if canon.file_name().is_none() {
+        return true;
+    }
+    let lower = canon.to_string_lossy().to_lowercase();
+    REJECTED_WORKSPACES
+        .iter()
+        .any(|r| lower == *r || lower.starts_with(&(r.to_string() + "\\")) || lower.starts_with(&(r.to_string() + "/")))
 }
 
 /// 宽松规范化（不要求路径存在）。
@@ -68,10 +109,62 @@ pub fn canonicalize_loose(p: &Path) -> PathBuf {
     out
 }
 
+/// Windows：把路径解析为最终路径（解开 junction / symlink / reparse point）。
+/// 失败（不存在、权限等）时返回 None，由调用方回退字面比较。
+#[cfg(windows)]
+pub fn final_path(p: &Path) -> Option<PathBuf> {
+    use std::os::windows::ffi::OsStrExt;
+    use windows_sys::Win32::Foundation::{CloseHandle, INVALID_HANDLE_VALUE};
+    use windows_sys::Win32::Storage::FileSystem::{
+        CreateFileW, GetFinalPathNameByHandleW, FILE_FLAG_BACKUP_SEMANTICS, FILE_READ_ATTRIBUTES,
+        OPEN_EXISTING,
+    };
+
+    let wide: Vec<u16> = p.as_os_str().encode_wide().chain(std::iter::once(0)).collect();
+    unsafe {
+        let handle = CreateFileW(
+            wide.as_ptr(),
+            FILE_READ_ATTRIBUTES,
+            0x7, // FILE_SHARE_READ|WRITE|DELETE
+            std::ptr::null_mut(),
+            OPEN_EXISTING,
+            FILE_FLAG_BACKUP_SEMANTICS, // 允许打开目录
+            std::ptr::null_mut(),
+        );
+        if handle == INVALID_HANDLE_VALUE {
+            return None;
+        }
+        let mut buf = [0u16; 4096];
+        let len = GetFinalPathNameByHandleW(handle, buf.as_mut_ptr(), buf.len() as u32, 0);
+        CloseHandle(handle);
+        if len == 0 || len as usize >= buf.len() {
+            return None;
+        }
+        let s = String::from_utf16_lossy(&buf[..len as usize]);
+        // 去掉 \\?\ 前缀（保留大小写规范形式）
+        let stripped = s.strip_prefix(r"\\?\").unwrap_or(&s).to_string();
+        Some(PathBuf::from(stripped))
+    }
+}
+
+#[cfg(not(windows))]
+pub fn final_path(_p: &Path) -> Option<PathBuf> {
+    None
+}
+
+/// 供越界判断使用的路径：优先 Windows 最终路径（防 junction/symlink 逃逸），失败回退字面规范化。
+fn resolved_for_check(p: &Path) -> PathBuf {
+    #[cfg(windows)]
+    if let Some(fp) = final_path(p) {
+        return fp;
+    }
+    canonicalize_loose(p)
+}
+
 /// 判断某个（可能不存在的）路径是否位于工作区内。
 pub fn is_within_workspace(workspace: &Path, target: &Path) -> bool {
-    let ws = canonicalize_loose(workspace);
-    let t = canonicalize_loose(target);
+    let ws = resolved_for_check(workspace);
+    let t = resolved_for_check(target);
     t.starts_with(&ws)
 }
 
@@ -162,6 +255,27 @@ mod tests {
         assert!(is_within_workspace(ws, Path::new(r"C:\work\ws\a\b.xlsx")));
         assert!(!is_within_workspace(ws, Path::new(r"C:\work\ws2\a")));
         assert!(!is_within_workspace(ws, Path::new(r"C:\work\ws\..\other")));
+    }
+
+    #[test]
+    fn rejected_workspaces() {
+        // 盘符根目录 / 系统目录 / 应用数据目录均拒绝
+        for bad in [r"C:\", r"D:\", r"C:\Windows", r"C:\Windows\System32", r"C:\HARNESS", r"C:\Program Files", "/"] {
+            let p = PathBuf::from(bad);
+            if p.is_absolute() {
+                assert!(is_rejected_workspace(&p), "应拒绝: {}", bad);
+            }
+        }
+        // 普通目录允许
+        assert!(!is_rejected_workspace(Path::new(r"C:\work\ws")));
+        assert!(!is_rejected_workspace(Path::new(r"F:\桌面文件\项目A")));
+    }
+
+    #[test]
+    fn ensure_workspace_rejects_system() {
+        assert!(ensure_workspace(r"C:\Windows").is_err());
+        assert!(ensure_workspace(r"C:\HARNESS").is_err());
+        assert!(ensure_workspace(r"C:\").is_err());
     }
 
     #[test]
