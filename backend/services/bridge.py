@@ -93,18 +93,37 @@ def _input_to_messages(input_items, instructions: str) -> list:
 
 
 def _tools_from_body(body) -> list | None:
+    """转换工具定义 → chat/completions tools。
+
+    官方 Codex（rust-v0.149）的 Responses 工具是扁平结构：
+        {"type": "function", "name": ..., "description": ..., "parameters": ..., "strict": ...}
+    也兼容旧嵌套结构：
+        {"type": "function", "function": {"name": ..., "description": ..., "parameters": ...}}
+    未知工具类型不静默丢弃：打印明确告警（写入 memory-server.log）。
+    """
     tools = []
     for t in body.get("tools") or []:
-        fn = t.get("function") if isinstance(t, dict) else None
-        if fn:
+        if not isinstance(t, dict):
+            continue
+        typ = t.get("type")
+        if typ == "function":
+            # 扁平（Responses）与嵌套（Chat）两种形态
+            fn = t.get("function") if isinstance(t.get("function"), dict) else None
+            src = fn if fn is not None else t
+            name = src.get("name", "")
+            desc = src.get("description", "")
+            params = src.get("parameters") or {"type": "object", "properties": {}}
             tools.append({
                 "type": "function",
                 "function": {
-                    "name": fn.get("name", ""),
-                    "description": fn.get("description", ""),
-                    "parameters": fn.get("parameters", {"type": "object", "properties": {}}),
+                    "name": name,
+                    "description": desc or "",
+                    "parameters": params if isinstance(params, dict) else {"type": "object", "properties": {}},
                 },
             })
+        else:
+            # custom / freeform / namespace / tool_search 等暂不支持：显式告警，不静默
+            print("[bridge] 忽略不支持的工具类型: {}（name={}）".format(typ, t.get("name", "")), flush=True)
     return tools or None
 
 
@@ -199,6 +218,7 @@ def _translate_stream(body: dict, rid: str):
         tool_added = False
         reasoning_started = False
         text_started = False
+        usage = {}   # 从上游流式最终 chunk 捕获 usage（部分网关仅在最后一帧返回）
         for raw in upstream.iter_lines(decode_unicode=True):
             if not raw:
                 continue
@@ -212,6 +232,8 @@ def _translate_stream(body: dict, rid: str):
                 obj = json.loads(data)
             except Exception:
                 continue
+            if obj.get("usage"):
+                usage = obj.get("usage") or {}
             choices = obj.get("choices") or []
             if not choices:
                 continue
@@ -291,6 +313,12 @@ def _translate_stream(body: dict, rid: str):
         yield _sse({"type": "response.completed", "response": {
             "id": rid, "object": "response", "status": "completed", "model": MODEL, "output": output_items,
             "created_at": int(time.time()),
+            "usage": {
+                # 上游未返回 usage 时显式标记 unknown，而不是伪造 0（保证水位可信）
+                "input_tokens": usage.get("prompt_tokens") if usage else None,
+                "output_tokens": usage.get("completion_tokens") if usage else None,
+                "total_tokens": usage.get("total_tokens") if usage else None,
+            },
         }})
         yield "data: [DONE]\n\n"
 

@@ -64,20 +64,24 @@ def _eligible(blocks: List[MemoryBlock], current_round: int) -> List[MemoryBlock
     return out
 
 
-def _protect(blocks: List[MemoryBlock], store: MemoryStore) -> Tuple[List[MemoryBlock], List[MemoryBlock]]:
-    """返回 (压缩候选, 受保护块)。受保护块 importance 强制置 5 并持久化。"""
+def _protect(eligible_blocks: List[MemoryBlock], store: MemoryStore, full_pool: List[MemoryBlock]) -> Tuple[List[MemoryBlock], List[MemoryBlock]]:
+    """从候选（eligible）中分出受保护块；importance 置 5 并回写完整池。
+
+    重要：只处理 eligible 块，绝不触碰新块/暂停/置顶/已归档块；
+    回写时必须保存完整池（full_pool），否则会静默丢弃池内其它块。
+    """
     cands, protected = [], []
-    for b in blocks:
+    changed = False
+    for b in eligible_blocks:
         if _is_protected(b.content):
             if b.importance < 5:
                 b.importance = 5
-                protected.append(b)
-            else:
-                protected.append(b)
+                changed = True
+            protected.append(b)
         else:
             cands.append(b)
-    if protected:
-        store.save_blocks(blocks, None)
+    if changed:
+        store.save_blocks(full_pool, None)
     return cands, protected
 
 
@@ -154,8 +158,8 @@ def compress(store: MemoryStore) -> dict:
             "message": "没有需要压缩的旧记忆块（10 轮内 / 已置顶的块不受影响）。",
         }
 
-    # 数值隔离保护（持久化 importance=5）
-    candidates, protected = _protect(blocks, store)
+    # 数值隔离保护（持久化 importance=5）——候选范围严格限定为 eligible 块
+    candidates, protected = _protect(eligible, store, blocks)
     if not candidates:
         return {
             "ok": True, "compacted": 0, "created": 0, "ineffective": False,

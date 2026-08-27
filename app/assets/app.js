@@ -497,7 +497,8 @@ async function switchMode(mode) {
       await invoke("save_settings", { settings: s });
       state.settings = s;
       toast("已切换至" + m.label);
-      if (state.apiKey || (await invoke("has_api_key").catch(() => false))) {
+      const noAuth = !!(s.no_auth);
+      if (state.apiKey || (await invoke("has_api_key").catch(() => false)) || noAuth) {
         state.running = false;
         startEngine();
       }
@@ -1147,7 +1148,7 @@ async function testConnection() {
 async function saveSettings() {
   const s = {
     workspace_path: (state.settings && state.settings.workspace_path) || "",
-    provider_name: $("#set-provider").value === "deepseek" ? "deepseek" : $("#set-base").value.trim() || "custom",
+    provider_name: $("#set-provider").value === "deepseek" ? "deepseek" : "custom",
     base_url: $("#set-base").value.trim(),
     model: $("#set-model").value.trim(),
     api_key_env: "OH_API_KEY",

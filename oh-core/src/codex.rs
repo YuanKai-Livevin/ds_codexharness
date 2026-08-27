@@ -77,6 +77,12 @@ impl CodexServer {
         } else {
             settings.base_url.clone()
         };
+        // 安全生成（T0-04）：provider 内部 ID 固定为安全 slug；base_url/model/env 做 TOML 转义，
+        // 避免引号/换行/Unicode 破坏 config.toml
+        let provider_slug = safe_slug(&settings.provider_name);
+        let model = toml_escape(&settings.model);
+        let base_url = toml_escape(&engine_base);
+        let env_key = toml_escape(&settings.api_key_env);
         let cfg = format!(
             r#"model = "{}"
 model_provider = "{}"
@@ -92,14 +98,14 @@ base_url = "{}"
 wire_api = "responses"
 env_key = "{}"
 {}"#,
-            settings.model,
-            settings.provider_name,
+            model,
+            provider_slug,
             settings.sandbox_mode,
             if settings.windows_sandbox == "elevated" { "elevated" } else { "unelevated" },
-            settings.provider_name,
-            settings.provider_name,
-            engine_base,
-            settings.api_key_env,
+            provider_slug,
+            toml_escape(&settings.provider_name),
+            base_url,
+            env_key,
             no_auth_line,
         );
         std::fs::write(codex_home.join("config.toml"), cfg).map_err(|e| e.to_string())?;
@@ -601,6 +607,20 @@ prefix_rule(pattern=["git", "clean"], decision="prompt")
     pub async fn current_thread_id(&self) -> Option<String> {
         self.thread_id.lock().await.clone()
     }
+}
+
+/// TOML 基本字符串转义（防引号/反斜杠破坏配置）。
+fn toml_escape(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+/// 安全 provider 内部 ID：仅保留 [A-Za-z0-9_-]，非法或为空时回退 "custom"。
+fn safe_slug(s: &str) -> String {
+    let cleaned: String = s
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '-')
+        .collect();
+    if cleaned.is_empty() { "custom".to_string() } else { cleaned }
 }
 
 async fn handle_server_request(

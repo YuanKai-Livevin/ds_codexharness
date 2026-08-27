@@ -34,17 +34,23 @@ $libs = @(
     "pandas", "numpy", "pillow", "xlrd", "matplotlib", "requests",
     "python-dateutil", "et_xmlfile"
 )
+# 记忆面板/翻译层服务依赖（与 backend/requirements.txt 一致，纳入同一构建闭环）
+$svcLibs = @(
+    "fastapi>=0.110", "uvicorn[standard]>=0.29",
+    "tiktoken>=0.7", "pydantic>=2"
+)
 $py = Join-Path $pyDir "python.exe"
-$pipArgs = @("-m", "pip", "install", "--no-warn-script-location", "--timeout", "60", "--retries", "10") + $libs
+$pipArgs = @("-m", "pip", "install", "--no-warn-script-location", "--timeout", "60", "--retries", "10") + $libs + $svcLibs
 & $py @pipArgs 2>&1 | Select-Object -Last 6
 if ($LASTEXITCODE -ne 0) {
     Write-Output "== pypi failed, retry with TUNA mirror =="
     $mirror = @("-m", "pip", "install", "--no-warn-script-location", "--timeout", "60", "--retries", "10",
-                "-i", "https://pypi.tuna.tsinghua.edu.cn/simple") + $libs
+                "-i", "https://pypi.tuna.tsinghua.edu.cn/simple") + $libs + $svcLibs
     & $py @mirror 2>&1 | Select-Object -Last 6
     if ($LASTEXITCODE -ne 0) { throw "pip install failed on both indexes" }
 }
 
 Write-Output "== verification =="
 & $py -c "import openpyxl, pandas, docx, pptx, pypdf, PIL, xlsxwriter; print('office libs OK:', openpyxl.__version__, pandas.__version__)"
+& $py -c "import fastapi, uvicorn, tiktoken; print('svc libs OK:', fastapi.__version__, uvicorn.__version__, tiktoken.__version__)"
 Write-Output "== done =="
