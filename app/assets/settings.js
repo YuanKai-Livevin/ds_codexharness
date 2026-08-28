@@ -48,7 +48,20 @@ async function testConnection() {
     const r = await invoke("test_connection", { apiKey: key });
     if (res) {
       res.className = "test-result " + (r.ok ? "ok" : "fail");
-      res.textContent = r.message;
+      // 能力档案（R4）：显示探测到的模型能力
+      const caps = [];
+      if (typeof r.supports_responses === "boolean") caps.push("Responses API: " + (r.supports_responses ? "✔" : "✘"));
+      if (typeof r.supports_chat === "boolean") caps.push("Chat Completions: " + (r.supports_chat ? "✔" : "✘"));
+      if (typeof r.supports_reasoning === "boolean") caps.push("推理: " + (r.supports_reasoning ? "✔" : "✘"));
+      if (typeof r.returns_usage === "boolean") caps.push("用量上报: " + (r.returns_usage ? "✔" : "✘"));
+      if (r.suggestion === "use_bridge") caps.push("建议: 开启内置翻译层");
+      if (r.suggestion === "direct") caps.push("建议: 直连（无需翻译层）");
+      const capLine = caps.length ? "　" + caps.join(" · ") : "";
+      res.textContent = (r.message || "") + capLine;
+      // 若仅支持 chat 且未开翻译层 → 提示
+      if (r.suggestion === "use_bridge" && !$("#set-bridge").checked) {
+        toast("检测到网关仅支持 chat/completions，建议勾选「使用内置翻译层」", "warn");
+      }
     }
   } catch (e) {
     if (res) { res.className = "test-result fail"; res.textContent = "测试失败：" + e; }

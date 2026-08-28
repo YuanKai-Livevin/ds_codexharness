@@ -144,21 +144,41 @@ pub(crate) async fn test_connection(
         return Err("未找到内置 Python 运行时".to_string());
     }
     let base = settings.base_url.trim().trim_end_matches('/').to_string();
-    let url = format!("{}/models", base);
-    // 内网免密钥模式：无 Key 时不带 Authorization 头（requires_openai_auth=false）
-    let script = r#"import sys, urllib.request, urllib.error
-url, key = sys.argv[1], sys.argv[2]
-headers = {"Content-Type": "application/json"}
-if key and key != "EMPTY":
-    headers["Authorization"] = "Bearer " + key
-req = urllib.request.Request(url, headers=headers)
-try:
-    with urllib.request.urlopen(req, timeout=20) as r:
-        print(r.status)
-except urllib.error.HTTPError as e:
-    print("HTTP", e.code)
-except Exception as e:
-    print("ERR", e)
+    let model = settings.model.clone();
+    // 能力自检（R4）：探测 /models、/responses、/chat/completions，输出能力档案 JSON
+    let script = r#"import sys, json, urllib.request, urllib.error
+base, model, key = sys.argv[1], sys.argv[2], sys.argv[3]
+def hdr():
+    h = {"Content-Type": "application/json"}
+    if key and key != "EMPTY":
+        h["Authorization"] = "Bearer " + key
+    return h
+def req(url, data=None, timeout=20):
+    body = json.dumps(data).encode() if data is not None else None
+    r = urllib.request.Request(url, data=body, headers=hdr(), method="POST" if data is not None else "GET")
+    try:
+        with urllib.request.urlopen(r, timeout=timeout) as resp:
+            return resp.status, resp.read().decode("utf-8", "replace")[:2000]
+    except urllib.error.HTTPError as e:
+        return e.code, e.read().decode("utf-8", "replace")[:2000]
+    except Exception as e:
+        return 0, str(e)[:300]
+rep = {"base": base, "model": model, "context_window": "unknown"}
+s, _ = req(base + "/models")
+rep["models_http"] = s
+s, body = req(base + "/responses", {"model": model, "input": [{"type": "message", "role": "user", "content": [{"type": "input_text", "text": "hi"}]}], "max_output_tokens": 1, "stream": False})
+rep["supports_responses"] = s == 200
+rep["supports_reasoning"] = s == 200 and '"reasoning"' in body
+rep["returns_usage"] = s == 200 and '"usage"' in body
+s, _ = req(base + "/chat/completions", {"model": model, "messages": [{"role": "user", "content": "hi"}], "max_tokens": 1})
+rep["supports_chat"] = s == 200
+if rep["supports_responses"]:
+    rep["suggestion"] = "direct"
+elif rep["supports_chat"]:
+    rep["suggestion"] = "use_bridge"
+else:
+    rep["suggestion"] = "check_base"
+print(json.dumps(rep, ensure_ascii=False))
 "#;
     let mut cmd = std::process::Command::new(&python);
     #[cfg(windows)]
@@ -167,15 +187,32 @@ except Exception as e:
         cmd.creation_flags(0x08000000);
     }
     let out = cmd
-        .args(["-c", script, &url, &key])
+        .args(["-c", script, &base, &model, &key])
         .output()
         .map_err(|e| format!("无法启动 Python: {}", e))?;
     let msg = String::from_utf8_lossy(&out.stdout).trim().to_string();
-    if msg.starts_with("200") {
-        Ok(serde_json::json!({ "ok": true, "message": "✅ 连接成功（HTTP 200），模型服务可用" }))
+    // 解析能力档案
+    let caps: serde_json::Value = serde_json::from_str(&msg).unwrap_or_else(|_| serde_json::json!({ "parse_error": msg }));
+    let models_ok = caps.get("models_http").and_then(|v| v.as_i64()).map(|v| v == 200).unwrap_or(false);
+    let supports_responses = caps.get("supports_responses").and_then(|v| v.as_bool()).unwrap_or(false);
+    let supports_chat = caps.get("supports_chat").and_then(|v| v.as_bool()).unwrap_or(false);
+    let suggestion = caps.get("suggestion").and_then(|v| v.as_str()).unwrap_or("check_base").to_string();
+    let ok = models_ok || supports_responses || supports_chat;
+    let mut caps_obj = caps.clone();
+    caps_obj["ok"] = serde_json::json!(ok);
+    let message = if ok {
+        if suggestion == "use_bridge" {
+            "✅ 连接成功：仅支持 chat/completions，建议开启「内置翻译层」".to_string()
+        } else if suggestion == "direct" {
+            "✅ 连接成功：支持 Responses API，可直接使用".to_string()
+        } else {
+            "✅ 连接成功：模型服务可用".to_string()
+        }
     } else {
-        Ok(serde_json::json!({ "ok": false, "message": format!("连接失败：{}", msg) }))
-    }
+        format!("连接失败：无法访问 {}/models、/responses、/chat/completions", base)
+    };
+    caps_obj["message"] = serde_json::json!(message);
+    Ok(caps_obj)
 }
 
 /// 引擎与运行环境状态。
