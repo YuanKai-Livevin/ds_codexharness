@@ -372,9 +372,14 @@ body {
 /* 轮次结束状态徽标（历史恢复） */
 .turn-status { text-align: center; font-size: 12px; color: var(--label-dimmed); margin: 2px 0 8px; user-select: none; }
 
-/* 任务计划卡（DSH 风格：只显示计划与进度，不刷命令行） */
-.plan-card { border: 1px solid var(--border-l2); border-radius: 10px; padding: 10px 12px; margin: 6px 0; background: var(--bg-layer-1); }
-.plan-title { font-weight: 700; font-size: 13px; margin-bottom: 6px; color: var(--label-primary); }
+/* 任务计划卡（DSH 风格：默认折叠，点击标题展开；头部实时显示进度） */
+.plan-card { border: 1px solid var(--border-l2); border-radius: 10px; padding: 8px 12px; margin: 6px 0; background: var(--bg-layer-1); }
+.plan-title { display: flex; align-items: center; gap: 6px; font-weight: 700; font-size: 13px; color: var(--label-primary); cursor: pointer; user-select: none; }
+.plan-toggle { color: var(--label-dimmed); font-size: 11px; transition: transform .15s; }
+.plan-title-text { white-space: nowrap; }
+.plan-summary { margin-left: auto; font-weight: 400; font-size: 11px; color: var(--label-dimmed); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.plan-card.collapsed .plan-steps { display: none; }
+.plan-steps { margin-top: 6px; }
 .plan-step { display: flex; gap: 8px; align-items: baseline; font-size: 12.5px; padding: 2px 0; }
 .plan-dot { flex-shrink: 0; width: 16px; text-align: center; }
 .plan-step.plan-pending { color: var(--label-dimmed); }
@@ -395,6 +400,7 @@ body {
   max-height: 260px; overflow-y: auto; cursor: text;
 }
 .reasoning .r-end { color: var(--label-dimmed); margin-top: 6px; font-family: inherit; }
+.reasoning.closed .r-body { display: none; }
 
 /* ============ 输入区 ============ */
 #composer-wrap { padding: 12px 20px 16px; background: var(--bg-layer-1); border-top: 1px solid var(--border-l1); position: relative; }

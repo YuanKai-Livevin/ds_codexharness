@@ -491,11 +491,19 @@ function finalizePlan() {
   if (!steps.length || state.planEl) return;
   state.plan = steps;
   const card = document.createElement("div");
-  card.className = "plan-card";
+  card.className = "plan-card collapsed";
+  // 头部：默认折叠，点击展开/收起；实时显示进度摘要
   const title = document.createElement("div");
   title.className = "plan-title";
-  title.textContent = "📋 任务计划";
+  title.innerHTML = '<span class="plan-toggle">▸</span> <span class="plan-title-text">📋 任务计划（' + steps.length + " 步）</span>" +
+    '<span class="plan-summary"></span>';
+  title.addEventListener("click", () => {
+    card.classList.toggle("collapsed");
+    title.querySelector(".plan-toggle").textContent = card.classList.contains("collapsed") ? "▸" : "▾";
+  });
   card.appendChild(title);
+  const stepsBox = document.createElement("div");
+  stepsBox.className = "plan-steps";
   for (const s of steps) {
     const row = document.createElement("div");
     row.className = "plan-step plan-pending";
@@ -507,8 +515,9 @@ function finalizePlan() {
     row.append(dot, txt);
     s.dom = row;
     s.dot = dot;
-    card.appendChild(row);
+    stepsBox.appendChild(row);
   }
+  card.appendChild(stepsBox);
   const anchor = state.currentAssistant ? state.currentAssistant.parentElement : null;
   if (anchor && anchor.parentElement) {
     anchor.insertAdjacentElement("afterend", card);
@@ -516,7 +525,22 @@ function finalizePlan() {
     $("#messages").appendChild(card);
   }
   state.planEl = card;
+  updatePlanSummary();
   scrollBottom();
+}
+
+// 折叠头部显示进度摘要：已完成 X / N 步 + 当前步骤
+function updatePlanSummary() {
+  if (!state.planEl) return;
+  const sum = state.planEl.querySelector(".plan-summary");
+  if (!sum) return;
+  const done = state.plan.filter((s) => s.status === "done").length;
+  const failed = state.plan.filter((s) => s.status === "failed").length;
+  const run = state.plan.find((s) => s.status === "running");
+  let text = "已完成 " + done + " / " + state.plan.length + " 步";
+  if (failed) text += " · " + failed + " 步失败";
+  if (run) text += " · ⟳ " + run.text.slice(0, 18) + (run.text.length > 18 ? "…" : "");
+  sum.textContent = text;
 }
 
 function renderPlanStep(s) {
@@ -530,6 +554,7 @@ function renderPlanStep(s) {
   const [cls, dot] = map[s.status] || map.pending;
   s.dom.className = "plan-step " + cls;
   if (s.dot) s.dot.textContent = dot;
+  updatePlanSummary();
 }
 
 // 命令事件驱动计划进度（命令细节隐藏时）
@@ -557,16 +582,30 @@ function advancePlan(status, cmd) {
   }
 }
 
-// ---------- 主消息流思考块（首个推理增量时创建，默认展开，持续追加） ----------
+// ---------- 主消息流思考块（顶部，首个推理增量时创建，持续追加） ----------
+
+// 在当前回合的用户消息之后插入思考块（保证位于计划卡/结果之上）
+function createReasonSlot() {
+  const msgs = $("#messages");
+  const users = msgs.querySelectorAll(":scope > .msg.user");
+  const anchor = users.length ? users[users.length - 1] : null;
+  const wrap = document.createElement("div");
+  wrap.className = "reasoning";
+  wrap.innerHTML = '<div class="r-head">🧠 思考过程（实时，点击折叠）</div><div class="r-body"></div>';
+  wrap.querySelector(".r-head").addEventListener("click", () => {
+    wrap.classList.toggle("closed");
+  });
+  if (anchor) {
+    anchor.insertAdjacentElement("afterend", wrap);
+  } else {
+    msgs.appendChild(wrap);
+  }
+  return wrap;
+}
 
 function appendReason(text) {
   if (!state.currentReason) {
-    state.currentReason = addMsg("assistant", "", "reasoning open");
-    state.currentReason.innerHTML =
-      '<div class="r-head">🧠 思考过程（实时，点击折叠）</div><div class="r-body"></div>';
-    state.currentReason.querySelector(".r-head").addEventListener("click", () => {
-      state.currentReason.classList.toggle("open");
-    });
+    state.currentReason = createReasonSlot();
   }
   const body = state.currentReason.querySelector(".r-body");
   body.textContent += text || "";
