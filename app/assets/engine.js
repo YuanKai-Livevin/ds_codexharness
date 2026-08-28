@@ -34,6 +34,8 @@ function handleEvent(ev) {
       setEngineChip(ev.state, ev.detail);
       if (ev.state === "running") {
         state.running = true;
+        // 引擎就绪后加载记忆面板（自动启动路径下 boot 时服务可能还没起来，这里兜底重试）
+        setupMemoryCard();
       }
       if (ev.state === "error") {
         state.running = false;
@@ -59,6 +61,7 @@ function handleEvent(ev) {
       state.streaming = true;
       state.currentCmd = null;
       resetPlan();
+      openReasonPanel();
       showRunBar("任务运行中…", null);
       break;
     case "agentDelta":
@@ -68,15 +71,7 @@ function handleEvent(ev) {
       routeAgentText(ev.text);
       break;
     case "reasoningDelta":
-      if (!state.currentReason) {
-        state.currentReason = addMsg("assistant", "", "reasoning");
-        state.currentReason.innerHTML =
-          '<div class="r-head">🧠 思考摘要（点击展开）</div><div class="r-body"></div>';
-        state.currentReason.querySelector(".r-head").addEventListener("click", () => {
-          state.currentReason.classList.toggle("open");
-        });
-      }
-      state.currentReason.querySelector(".r-body").textContent += ev.text;
+      appendReason(ev.text);
       break;
     case "commandStarted": {
       // 关闭「显示命令细节」时：只驱动任务计划进度，不渲染命令块
@@ -185,10 +180,7 @@ function handleEvent(ev) {
           }
         });
       }
-      if (state.currentReason) {
-        state.currentReason.querySelector(".r-head").textContent = "🧠 思考摘要（点击展开）";
-        state.currentReason = null;
-      }
+      finishReasonPanel(ev.status);
       state.currentAssistant = null;
       // 任务完成标识：不依赖模型输出，系统自动给出
       const statusLabel = ev.status === "completed" ? "已完成" : (ev.status || "已结束");
@@ -563,6 +555,46 @@ function advancePlan(status, cmd) {
     renderPlanStep(step);
     showRunBar((status === "done" ? "✔ " : "⚠ ") + step.text.slice(0, 28) + (step.text.length > 28 ? "…" : ""), null);
   }
+}
+
+// ---------- 持续思考面板（推理实时追加，可收起） ----------
+
+function openReasonPanel() {
+  const panel = $("#reason-panel");
+  const body = $("#reason-panel-body");
+  const title = $("#reason-panel-title");
+  if (!panel || !body) return;
+  body.textContent = "";
+  panel.classList.remove("hidden");
+  panel.classList.remove("collapsed");
+  if (title) title.textContent = "🧠 思考过程";
+  state.reasonOpen = true;
+}
+
+function appendReason(text) {
+  const body = $("#reason-panel-body");
+  if (!body) return;
+  if (!state.reasonOpen) {
+    const panel = $("#reason-panel");
+    if (panel) panel.classList.remove("hidden");
+  }
+  body.textContent += text || "";
+  body.scrollTop = body.scrollHeight;
+}
+
+function finishReasonPanel(status) {
+  const title = $("#reason-panel-title");
+  if (!title) return;
+  const ok = status === "completed";
+  title.textContent = ok
+    ? "🧠 本轮思考已结束（点击右上角收起）"
+    : "⚠ 本轮思考结束（" + (status || "未完成") + "）";
+}
+
+function toggleReasonPanel() {
+  const panel = $("#reason-panel");
+  if (!panel) return;
+  panel.classList.toggle("collapsed");
 }
 
 // ---------- 初始化 ----------
