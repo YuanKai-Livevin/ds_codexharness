@@ -93,7 +93,8 @@ function updateMemBar(ctxTokens) {
   }
 }
 
-// 阶段确认联动：面板确认「同时开启新阶段对话」后，新建会话并把阶段总结作为首条消息
+// 阶段确认联动：面板确认「同时开启新阶段对话」后，新建会话并把阶段总结作为首条交接消息。
+// 交接消息以「阶段交接」卡片展示，不伪装成用户输入；发送给模型时带交接标记。
 async function startPhaseThread(firstMessage) {
   const text = (firstMessage || "").trim();
   if (!text) { toast("没有阶段总结内容，已跳过新对话", "warn"); return; }
@@ -106,9 +107,11 @@ async function startPhaseThread(firstMessage) {
     state.currentSessionId = null;
     clearMessages();
     updateMemBar(0); // 新会话 = 全新上下文
-    addMsg("user", renderMd(text));
-    await invoke("send_message", { text });
-    toast("新阶段对话已开启（首条消息 = 阶段总结）", "ok");
+    addMsg("assistant",
+      '<div class="tag-block tag-plan"><div class="tag-title">📋 阶段交接 · 新阶段开始</div>' +
+      '<div class="cmd-block">' + escapeHtml(text) + "</div></div>");
+    await invoke("send_message", { text: "【阶段交接】以下为上一阶段的总结，作为新阶段的起始上下文：\n" + text });
+    toast("新阶段对话已开启（首条消息 = 阶段交接总结）", "ok");
     await loadSessions();
   } catch (e) {
     toast("开启新阶段对话失败：" + e, "err");

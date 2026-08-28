@@ -73,23 +73,89 @@ async function switchSession(id) {
     await invoke("switch_session", { threadId: id });
     state.currentSessionId = id;
     clearMessages();
-    // 加载历史消息
+    // 加载历史消息（含工具调用/命令输出/文件变更/轮次状态）
     try {
       const history = await invoke("session_history", { threadId: id });
-      for (const h of history || []) {
-        if (h.role === "user") {
-          addMsg("user", renderMd(h.text));
-        } else if (h.role === "assistant") {
-          const b = addMsg("assistant", "");
-          renderAssistantText(b, h.text);
-        }
-      }
+      renderHistory(history);
     } catch (e2) { /* 历史加载失败不影响切换 */ }
     await loadSessions();
     toast("已切换到历史会话");
   } catch (e) {
     toast("切换会话失败：" + e, "err");
   }
+}
+
+// 恢复历史消息：文本 / 命令块（可展开输出）/ 文件变更 / 轮次状态徽标
+function renderHistory(history) {
+  let lastStatus = "";
+  let lastEl = null;
+  for (const h of history || []) {
+    if (h.status && h.status !== lastStatus) {
+      if (lastEl) appendTurnStatus(lastEl, lastStatus);
+      lastStatus = h.status;
+      lastEl = null;
+    }
+    if (h.kind === "command") {
+      const wrap = buildHistoryCmdBlock(h.command, h.output, h.status);
+      $("#messages").appendChild(wrap);
+      lastEl = wrap;
+    } else if (h.kind === "filechange") {
+      const wrap = document.createElement("div");
+      wrap.className = "msg assistant";
+      const b = document.createElement("div");
+      b.className = "bubble";
+      const sum = escapeHtml((h.text || "").slice(0, 300)) + ((h.text || "").length > 300 ? "…" : "");
+      b.innerHTML = '<div class="tag-block tag-plan"><div class="tag-title">📝 文件修改</div><div class="cmd-block">' + sum + "</div></div>";
+      wrap.appendChild(b);
+      $("#messages").appendChild(wrap);
+      lastEl = wrap;
+    } else if (h.role === "user") {
+      lastEl = addMsg("user", renderMd(h.text));
+    } else {
+      const b = addMsg("assistant", "");
+      renderAssistantText(b, h.text);
+      lastEl = b.parentElement;
+    }
+  }
+  if (lastEl && lastStatus) appendTurnStatus(lastEl, lastStatus);
+  scrollBottom();
+  updateChatEmptyBg();
+}
+
+// 历史命令块：默认折叠，点击展开输出；按轮次状态标注 ✔/✘
+function buildHistoryCmdBlock(command, output, status) {
+  const wrap = document.createElement("div");
+  wrap.className = "cmd-wrap";
+  const cmd = command || "";
+  const ok = status !== "failed" && status !== "interrupted";
+  const head = document.createElement("div");
+  head.className = "cmd-head";
+  head.textContent = (ok ? "✔ " : "✘ ") + "💻 " + cmd.slice(0, 140) + (cmd.length > 140 ? "…" : "");
+  head.title = cmd + "\n（点击展开/收起输出）";
+  const out = document.createElement("div");
+  out.className = "cmd-output";
+  out.style.display = "none";
+  out.textContent = (output || "").trim() || "（无输出）";
+  head.addEventListener("click", () => {
+    out.style.display = out.style.display === "none" ? "" : "none";
+    scrollBottom();
+  });
+  wrap.append(head, out);
+  return wrap;
+}
+
+// 轮次结束状态徽标
+function appendTurnStatus(afterEl, status) {
+  const tag = document.createElement("div");
+  tag.className = "turn-status";
+  const map = {
+    completed: "✅ 本回合完成",
+    failed: "⚠ 本回合失败",
+    interrupted: "⏹ 本回合已中断",
+    requiresAction: "🔶 等待确认",
+  };
+  tag.textContent = map[status] || "本回合：" + status;
+  afterEl.insertAdjacentElement("afterend", tag);
 }
 
 async function deleteSession(id) {

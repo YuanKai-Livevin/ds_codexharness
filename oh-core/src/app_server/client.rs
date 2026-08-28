@@ -49,7 +49,16 @@ pub struct ThreadInfo {
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct HistoryMessage {
     pub role: String, // user | assistant
+    /// text | command | filechange
+    pub kind: String,
+    /// 文本内容（kind=text）/ 命令（kind=command）/ 变更摘要（kind=filechange）
     pub text: String,
+    /// kind=command 时的命令文本
+    pub command: String,
+    /// kind=command 时的命令输出
+    pub output: String,
+    /// 所属轮次状态：completed | failed | interrupted | ""（未知）
+    pub status: String,
 }
 
 pub struct CodexServer {
@@ -425,30 +434,11 @@ impl CodexServer {
         self.request("thread/delete", params).await.map(|_| ())
     }
 
-    /// 读取会话历史（含 turns），返回用户/助手消息列表。
+    /// 读取会话历史（含 turns），恢复文本消息、工具调用（命令+输出）、文件变更与轮次状态。
     pub async fn read_thread_history(&mut self, thread_id: &str) -> Result<Vec<HistoryMessage>, CodexError> {
         let params = json!({ "threadId": thread_id, "includeTurns": true });
         let res = self.request("thread/read", params).await?;
-        let mut out = Vec::new();
-        if let Some(turns) = res.pointer("/thread/turns").and_then(|t| t.as_array()) {
-            for turn in turns {
-                if let Some(items) = turn.get("items").and_then(|i| i.as_array()) {
-                    for item in items {
-                        let itype = item.get("type").and_then(|v| v.as_str()).unwrap_or("");
-                        let text = item.get("text").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                        if text.trim().is_empty() {
-                            continue;
-                        }
-                        match itype {
-                            "userMessage" => out.push(HistoryMessage { role: "user".into(), text }),
-                            "agentMessage" => out.push(HistoryMessage { role: "assistant".into(), text }),
-                            _ => {}
-                        }
-                    }
-                }
-            }
-        }
-        Ok(out)
+        Ok(parse_thread_history(&res))
     }
 
     /// 注册额外的 SKILLS 仓库根（codex skills/extraRoots/set）。
@@ -544,5 +534,193 @@ impl CodexServer {
     /// 当前会话 id。
     pub async fn current_thread_id(&self) -> Option<String> {
         self.thread_id.lock().await.clone()
+    }
+}
+
+/// 解析 thread/read 响应，恢复文本 / 命令（含输出）/ 文件变更 / 轮次状态。
+pub(crate) fn parse_thread_history(res: &serde_json::Value) -> Vec<HistoryMessage> {
+    let mut out = Vec::new();
+    if let Some(turns) = res.pointer("/thread/turns").and_then(|t| t.as_array()) {
+        for turn in turns {
+            let status = turn
+                .get("status")
+                .and_then(|s| s.as_str())
+                .unwrap_or("")
+                .to_string();
+            if let Some(items) = turn.get("items").and_then(|i| i.as_array()) {
+                for item in items {
+                    let itype = item.get("type").and_then(|v| v.as_str()).unwrap_or("");
+                    let text = item.get("text").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    match itype {
+                        "userMessage" => {
+                            if !text.trim().is_empty() {
+                                out.push(HistoryMessage {
+                                    role: "user".into(),
+                                    kind: "text".into(),
+                                    text,
+                                    command: String::new(),
+                                    output: String::new(),
+                                    status: status.clone(),
+                                });
+                            }
+                        }
+                        "agentMessage" => {
+                            if !text.trim().is_empty() {
+                                out.push(HistoryMessage {
+                                    role: "assistant".into(),
+                                    kind: "text".into(),
+                                    text,
+                                    command: String::new(),
+                                    output: String::new(),
+                                    status: status.clone(),
+                                });
+                            }
+                        }
+                        "commandExecution" => {
+                            let command = item
+                                .get("command")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string();
+                            if command.trim().is_empty() {
+                                continue;
+                            }
+                            let output = item
+                                .get("aggregatedOutput")
+                                .or_else(|| item.get("output"))
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string();
+                            out.push(HistoryMessage {
+                                role: "assistant".into(),
+                                kind: "command".into(),
+                                text: command.clone(),
+                                command,
+                                output,
+                                status: status.clone(),
+                            });
+                        }
+                        "fileChange" => {
+                            let summary = item
+                                .get("summary")
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string())
+                                .unwrap_or_else(|| {
+                                    let mut parts = Vec::new();
+                                    if let Some(changes) = item.get("changes").and_then(|c| c.as_array()) {
+                                        for ch in changes {
+                                            let name = ch
+                                                .get("file_name")
+                                                .or_else(|| ch.get("filePath"))
+                                                .and_then(|v| v.as_str())
+                                                .unwrap_or("");
+                                            let ct = ch
+                                                .get("change_type")
+                                                .or_else(|| ch.get("changeType"))
+                                                .and_then(|v| v.as_str())
+                                                .unwrap_or("");
+                                            if !name.is_empty() {
+                                                parts.push(format!("{} {}", ct, name));
+                                            }
+                                        }
+                                    }
+                                    parts.join("\n")
+                                });
+                            out.push(HistoryMessage {
+                                role: "assistant".into(),
+                                kind: "filechange".into(),
+                                text: summary,
+                                command: String::new(),
+                                output: String::new(),
+                                status: status.clone(),
+                            });
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn parse_history_recovers_commands_files_and_status() {
+        let res = json!({
+            "thread": {
+                "turns": [
+                    {
+                        "status": "completed",
+                        "items": [
+                            { "type": "userMessage", "text": "统计一下这个目录的文件数量" },
+                            { "type": "agentMessage", "text": "我来用命令统计。" },
+                            {
+                                "type": "commandExecution",
+                                "command": "powershell -Command \"(Get-ChildItem -File).Count\"",
+                                "aggregatedOutput": "42\r\n"
+                            },
+                            {
+                                "type": "fileChange",
+                                "changes": [
+                                    { "file_name": "report.md", "change_type": "created" },
+                                    { "file_name": "notes.txt", "change_type": "modified" }
+                                ]
+                            },
+                            { "type": "agentMessage", "text": "统计完成：共 42 个文件。" }
+                        ]
+                    },
+                    {
+                        "status": "interrupted",
+                        "items": [
+                            { "type": "userMessage", "text": "继续分析" },
+                            { "type": "agentMessage", "text": "" }
+                        ]
+                    }
+                ]
+            }
+        });
+        let h = parse_thread_history(&res);
+        assert_eq!(h.len(), 6);
+        assert_eq!(h[0].role, "user");
+        assert_eq!(h[0].kind, "text");
+        assert_eq!(h[1].kind, "text");
+        // 命令块：命令与输出完整恢复
+        assert_eq!(h[2].kind, "command");
+        assert!(h[2].command.contains("Get-ChildItem"));
+        assert!(h[2].output.contains("42"));
+        assert_eq!(h[2].status, "completed");
+        // 文件变更摘要
+        assert_eq!(h[3].kind, "filechange");
+        assert!(h[3].text.contains("report.md"));
+        // 轮次状态传递
+        assert_eq!(h[4].status, "completed");
+        assert_eq!(h[5].role, "user");
+        assert_eq!(h[5].text, "继续分析");
+        assert_eq!(h[5].status, "interrupted");
+    }
+
+    #[test]
+    fn parse_history_skips_empty_and_unknown() {
+        let res = json!({
+            "thread": {
+                "turns": [
+                    {
+                        "status": "failed",
+                        "items": [
+                            { "type": "userMessage", "text": "" },
+                            { "type": "unknownKind", "text": "ignored" },
+                            { "type": "commandExecution", "command": "  ", "aggregatedOutput": "x" }
+                        ]
+                    }
+                ]
+            }
+        });
+        let h = parse_thread_history(&res);
+        assert_eq!(h.len(), 0);
     }
 }

@@ -364,6 +364,9 @@ body {
 .cmd-head:hover { background: var(--bg-active); color: var(--label-primary); }
 .cmd-output { background: var(--code-bg); color: var(--label-secondary); border-radius: 8px; font-family: var(--mono); font-size: 12px; padding: 8px 12px; margin: 4px 0; white-space: pre-wrap; max-height: 200px; overflow-y: auto; }
 
+/* 轮次结束状态徽标（历史恢复） */
+.turn-status { text-align: center; font-size: 12px; color: var(--label-dimmed); margin: 2px 0 8px; user-select: none; }
+
 /* 思考摘要 */
 .reasoning { align-self: flex-start; max-width: 88%; font-size: 12px; color: var(--label-dimmed); background: transparent; border: 1px dashed var(--border-l2); border-radius: 8px; padding: 6px 10px; cursor: pointer; user-select: none; }
 .reasoning .r-body { display: none; white-space: pre-wrap; margin-top: 6px; color: var(--label-tertiary); }
