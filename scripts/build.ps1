@@ -1,4 +1,4 @@
-# build.ps1 - Assemble the distributable OfficeHarness folder (versioned output).
+﻿# build.ps1 - Assemble the distributable OfficeHarness folder (versioned output).
 # Usage:  powershell -ExecutionPolicy Bypass -File scripts\build.ps1
 $root = Split-Path $PSScriptRoot -Parent
 # Versioned output dir so a running old build never blocks the copy.
@@ -56,7 +56,22 @@ Write-Output "  memory block copied"
 
 # 确定性办公工具包（R10 office-tools：otools.py + otools_lib + SKILL.md）
 Copy-Item -Recurse "$root\tools\office-tools" (Join-Path $dist "office-tools") -Force
-Get-ChildItem (Join-Path $dist "office-tools") -Recurse -Directory -Filter "__pycache__" | Remove-Item -Recurse -Force
+# 复制校验：失败则清理重试一次（防杀软扫描竞态导致文件未落地）
+if (-not (Test-Path (Join-Path $dist "office-tools\otools.py"))) {
+    Write-Output "  office-tools copy check failed, retrying once..."
+    if (Test-Path (Join-Path $dist "office-tools")) {
+        Remove-Item -Recurse -Force (Join-Path $dist "office-tools")
+    }
+    Start-Sleep -Seconds 1
+    Copy-Item -Recurse "$root\tools\office-tools" (Join-Path $dist "office-tools") -Force
+}
+if (-not (Test-Path (Join-Path $dist "office-tools\otools.py"))) {
+    Fail "office-tools copy check failed twice"
+}
+# 剔除 Python 缓存（逐项删除，避免 PS5.1 管道 + -Recurse 的已知问题误删内容）
+$otools = Join-Path $dist "office-tools"
+$pc = Get-ChildItem $otools -Recurse -Directory -Filter "__pycache__" -ErrorAction SilentlyContinue
+foreach ($d in $pc) { Remove-Item -LiteralPath $d.FullName -Recurse -Force -ErrorAction SilentlyContinue }
 Write-Output "  office-tools copied"
 
 Write-Output "== [4/4] Summary =="
