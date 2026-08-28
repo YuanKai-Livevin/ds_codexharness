@@ -19,3 +19,4 @@ serde_json = "1"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "process", "io-util", "time"] }
 oh-core = { path = "../oh-core" }
 dirs = "6"
+rusqlite = { version = "0.31", features = ["bundled"] }

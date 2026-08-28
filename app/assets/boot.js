@@ -1,6 +1,13 @@
 async function init() {
   // 绑定事件
   $("#btn-settings").addEventListener("click", openSettings);
+  // R6 审计
+  $("#btn-audit").addEventListener("click", openAudit);
+  $("#btn-audit-close").addEventListener("click", () => $("#modal-audit").classList.add("hidden"));
+  $("#btn-audit-export").addEventListener("click", exportAuditPackage);
+  document.querySelectorAll(".audit-filter").forEach((b) => {
+    b.addEventListener("click", () => setAuditFilter(b.dataset.cat));
+  });
   $("#btn-settings-cancel").addEventListener("click", () => $("#modal-settings").classList.add("hidden"));
   $("#btn-settings-save").addEventListener("click", saveSettings);
   $("#btn-onboard-go").addEventListener("click", () => {

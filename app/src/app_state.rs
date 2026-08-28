@@ -1,5 +1,6 @@
 //! 应用全局状态与数据根目录。
 
+use crate::services::audit::AuditStore;
 use oh_core::codex::CodexServer;
 use oh_core::config::AppSettings;
 use serde::Serialize;
@@ -37,6 +38,18 @@ impl EngineState {
     }
 }
 
+/// 当前审计任务上下文（R6）：一轮用户请求 = 一个任务，task_id 在 TurnStarted 时落定。
+pub(crate) struct TaskCtx {
+    pub(crate) task_id: Option<String>,
+    pub(crate) goal: String,
+    pub(crate) started_ms: i64,
+    pub(crate) model: String,
+    pub(crate) workspace: String,
+    pub(crate) gateway: Option<String>,
+    /// 本任务内发生的文件变更摘要（产出物）
+    pub(crate) files: Vec<String>,
+}
+
 pub(crate) struct AppState {
     pub(crate) settings_path: PathBuf,
     pub(crate) codex_home: PathBuf,
@@ -52,6 +65,9 @@ pub(crate) struct AppState {
     pub(crate) memory_pid: Mutex<Option<u32>>,
     pub(crate) memory_port: Mutex<Option<u16>>,
     pub(crate) session_token: Mutex<Option<String>>,
+    // R6 结构化审计
+    pub(crate) audit: AuditStore,
+    pub(crate) current_task: Mutex<Option<TaskCtx>>,
 }
 
 /// 应用数据根目录：所有应用级配置/数据集中在一个目录便于管理。

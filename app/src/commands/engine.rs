@@ -1,6 +1,8 @@
 //! 引擎生命周期与消息命令：启动/停止/发送/审批/中断/沙箱。
 
-use crate::app_state::{data_root, AppState, EngineState};
+use crate::app_state::{data_root, AppState, EngineState, TaskCtx};
+use crate::commands::audit::now_ms;
+use crate::services::audit::{estimate_cost, parse_usage_tokens, redact};
 use crate::services::memory_sidecar::{
     memory_block_dir, parse_input_tokens, session_token, spawn_gateway, spawn_memory_server,
     stop_gateway, write_conversation_tokens,
@@ -28,6 +30,13 @@ pub(crate) async fn start_engine_inner(
 ) -> Result<(), String> {
     let res = start_engine_inner_impl(app, state, api_key).await;
     if res.is_err() {
+        // R6 审计：启动失败
+        state.audit.record(
+            None,
+            "error",
+            "engine_start_failed",
+            serde_json::json!({ "msg": redact(res.as_ref().unwrap_err()) }),
+        );
         let st = *state.engine_state.lock().await;
         // 只在仍处于 Starting（未成功也未主动停止）时标记失败
         if st == EngineState::Starting {
@@ -149,6 +158,21 @@ async fn start_engine_inner_impl(
         key.clone()
     };
 
+    // R6 审计：引擎启动记录（模型/网关/工作区；不含 Key）
+    state.audit.record(
+        None,
+        "engine",
+        "engine_start",
+        serde_json::json!({
+            "model": settings.model,
+            "base_url": settings.base_url,
+            "use_bridge": settings.use_bridge,
+            "no_auth": settings.no_auth,
+            "workspace": ws_str,
+            "gateway_port": gateway_port,
+        }),
+    );
+
     let mut server = CodexServer::spawn(&bundled, &state.codex_home, &settings, &engine_key)
         .await
         .map_err(|e| format!("启动引擎失败: {}", e))?;
@@ -166,12 +190,154 @@ async fn start_engine_inner_impl(
         .await
         .map_err(|e| format!("创建会话失败: {}", e))?;
 
-    // 事件转发任务（同时更新状态机：Busy/Ready/崩溃 Failed + 写入记忆水位）
+    // 事件转发任务（同时更新状态机：Busy/Ready/崩溃 Failed + 写入记忆水位 + R6 审计）
     let mut rx = server.take_events().ok_or("事件通道不可用")?;
     let handle = app.clone();
     let mem_data = memory_block_dir(&ws).join("data");
+    let audit_model = settings.model.clone();
+    let audit_gateway = if settings.use_bridge {
+        gateway_port.map(|p| format!("127.0.0.1:{}", p))
+    } else {
+        None
+    };
     tauri::async_runtime::spawn(async move {
         while let Some(ev) = rx.recv().await {
+            // ---- R6 审计挂钩 ----
+            let st = handle.state::<AppState>();
+            match &ev {
+                EngineEvent::TurnStarted { turn_id } => {
+                    let task_id = turn_id.clone();
+                    let (goal, gateway) = {
+                        let mut ct = st.current_task.lock().await;
+                        match ct.as_mut() {
+                            Some(ctx) => {
+                                ctx.task_id = Some(task_id.clone());
+                                (ctx.goal.clone(), ctx.gateway.clone())
+                            }
+                            None => {
+                                // 兜底：无 send_message 上下文（极少见）
+                                *ct = Some(TaskCtx {
+                                    task_id: Some(task_id.clone()),
+                                    goal: String::new(),
+                                    started_ms: now_ms(),
+                                    model: audit_model.clone(),
+                                    workspace: String::new(),
+                                    gateway: audit_gateway.clone(),
+                                    files: Vec::new(),
+                                });
+                                (String::new(), audit_gateway.clone())
+                            }
+                        }
+                    };
+                    st.audit.record(
+                        Some(&task_id),
+                        "task",
+                        "task_start",
+                        serde_json::json!({
+                            "goal": goal,
+                            "model": audit_model,
+                            "workspace": audit_workspace_or(&st).await,
+                            "gateway": gateway,
+                        }),
+                    );
+                }
+                EngineEvent::CommandCompleted { command, status, output, .. } => {
+                    let tid = current_task_id(&st).await;
+                    st.audit.record(
+                        tid.as_deref(),
+                        "tool",
+                        "command_completed",
+                        serde_json::json!({
+                            "command": redact(command),
+                            "status": status,
+                            "output_chars": output.len(),
+                        }),
+                    );
+                }
+                EngineEvent::FileChangeStarted { summary, .. } => {
+                    if let Some(ctx) = st.current_task.lock().await.as_mut() {
+                        if !summary.trim().is_empty() {
+                            ctx.files.push(summary.clone());
+                        }
+                    }
+                    let tid = current_task_id(&st).await;
+                    st.audit.record(
+                        tid.as_deref(),
+                        "file",
+                        "file_changed",
+                        serde_json::json!({ "summary": redact(summary) }),
+                    );
+                }
+                EngineEvent::ApprovalRequest { request_id, kind, command, reason, changes, .. } => {
+                    let tid = current_task_id(&st).await;
+                    st.audit.record(
+                        tid.as_deref(),
+                        "approval",
+                        "approval_request",
+                        serde_json::json!({
+                            "request_id": request_id,
+                            "kind": kind,
+                            "command": redact(command),
+                            "reason": reason,
+                            "changes": changes.chars().take(400).collect::<String>(),
+                        }),
+                    );
+                }
+                EngineEvent::ApprovalResolved { request_id } => {
+                    let tid = current_task_id(&st).await;
+                    st.audit.record(
+                        tid.as_deref(),
+                        "approval",
+                        "approval_closed",
+                        serde_json::json!({ "request_id": request_id }),
+                    );
+                }
+                EngineEvent::TurnCompleted { status, usage } => {
+                    let (tin, tout) = parse_usage_tokens(usage);
+                    let (tid, started, files, model) = {
+                        let mut ct = st.current_task.lock().await;
+                        match ct.take() {
+                            Some(ctx) => (
+                                ctx.task_id.unwrap_or_default(),
+                                ctx.started_ms,
+                                ctx.files,
+                                ctx.model,
+                            ),
+                            None => (String::new(), now_ms(), Vec::new(), audit_model.clone()),
+                        }
+                    };
+                    let duration = if started > 0 { now_ms() - started } else { 0 };
+                    let cost = estimate_cost(&model, tin, tout);
+                    st.audit.record_full(
+                        if tid.is_empty() { None } else { Some(&tid) },
+                        "task",
+                        "task_end",
+                        serde_json::json!({
+                            "status": status,
+                            "model": model,
+                            "files": files,
+                        }),
+                        tin,
+                        tout,
+                        Some(duration),
+                        cost,
+                        None,
+                    );
+                }
+                EngineEvent::EngineStopped => {
+                    let st_state = *st.engine_state.lock().await;
+                    if st_state != EngineState::Stopping {
+                        st.audit.record(
+                            None,
+                            "error",
+                            "engine_crashed",
+                            serde_json::json!({ "msg": "引擎进程异常退出" }),
+                        );
+                    }
+                }
+                _ => {}
+            }
+            // ---- 状态机 ----
             match &ev {
                 EngineEvent::TurnStarted { .. } => {
                     set_engine_state(&handle, EngineState::Busy).await;
@@ -237,6 +403,27 @@ async fn start_engine_inner_impl(
     Ok(())
 }
 
+/// 当前任务 id（审计用）。
+async fn current_task_id(st: &State<'_, AppState>) -> Option<String> {
+    st.current_task
+        .lock()
+        .await
+        .as_ref()
+        .and_then(|c| c.task_id.clone())
+}
+
+/// 当前工作区（审计用；任务上下文缺失时取设置值）。
+async fn audit_workspace_or(st: &State<'_, AppState>) -> String {
+    let cur = st.current_task.lock().await;
+    if let Some(ctx) = cur.as_ref() {
+        if !ctx.workspace.is_empty() {
+            return ctx.workspace.clone();
+        }
+    }
+    let s = st.settings.lock().await.clone();
+    s.workspace_path
+}
+
 /// 启动引擎：拉起 codex app-server 并建立会话。
 #[tauri::command]
 pub(crate) async fn start_engine(
@@ -260,6 +447,8 @@ pub(crate) async fn stop_engine(state: State<'_, AppState>) -> Result<(), String
     *state.engine_pid.lock().await = None;
     *state.engine_state.lock().await = EngineState::Stopped;
     state.engine_running.store(false, Ordering::SeqCst);
+    // R6 审计：引擎停止
+    state.audit.record(None, "engine", "engine_stop", serde_json::json!({}));
     Ok(())
 }
 
@@ -292,10 +481,35 @@ pub(crate) async fn send_message(state: State<'_, AppState>, text: String) -> Re
     let server = guard
         .as_mut()
         .ok_or_else(|| "引擎未启动，请先启动引擎。".to_string())?;
-    server
-        .send_turn(&payload)
-        .await
-        .map_err(|e| format!("发送失败: {}", e))?;
+    // R6 审计：记录任务上下文（目标/模型/工作区/网关），turn_id 在 TurnStarted 时落定
+    {
+        let gateway = {
+            let p = *state.gateway_port.lock().await;
+            p.map(|p| format!("127.0.0.1:{}", p))
+        };
+        let mut ct = state.current_task.lock().await;
+        *ct = Some(TaskCtx {
+            task_id: None,
+            goal: payload.clone(),
+            started_ms: now_ms(),
+            model: s.model.clone(),
+            workspace: ws.to_string_lossy().to_string(),
+            gateway,
+            files: Vec::new(),
+        });
+    }
+    if let Err(e) = server.send_turn(&payload).await {
+        // R6 审计：发送失败（错误与重试）
+        let tid = current_task_id(&state).await;
+        state.audit.record(
+            tid.as_deref(),
+            "error",
+            "send_failed",
+            serde_json::json!({ "msg": redact(&e.to_string()) }),
+        );
+        let _ = state.current_task.lock().await.take();
+        return Err(format!("发送失败: {}", e));
+    }
     Ok(())
 }
 
@@ -306,14 +520,33 @@ pub(crate) async fn respond_approval(
     request_id: i64,
     decision: String,
 ) -> Result<(), String> {
-    let mut guard = state.engine.lock().await;
-    let server = guard
-        .as_mut()
-        .ok_or_else(|| "引擎未启动".to_string())?;
-    server
-        .respond_approval(request_id, &decision)
-        .await
-        .map_err(|e| e.to_string())
+    let tid = current_task_id(&state).await;
+    let res = {
+        let mut guard = state.engine.lock().await;
+        let server = guard
+            .as_mut()
+            .ok_or_else(|| "引擎未启动".to_string())?;
+        server
+            .respond_approval(request_id, &decision)
+            .await
+            .map_err(|e| e.to_string())
+    };
+    // R6 审计：审批决策（用户是否允许）
+    match &res {
+        Ok(()) => state.audit.record(
+            tid.as_deref(),
+            "approval",
+            "approval_decision",
+            serde_json::json!({ "request_id": request_id, "decision": decision }),
+        ),
+        Err(e) => state.audit.record(
+            tid.as_deref(),
+            "error",
+            "approval_failed",
+            serde_json::json!({ "request_id": request_id, "msg": redact(e) }),
+        ),
+    }
+    res
 }
 
 #[tauri::command]

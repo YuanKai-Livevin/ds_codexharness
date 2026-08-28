@@ -125,7 +125,10 @@
     </div>
   </div>
 
-  <!-- 左下角浮动设置按钮（仅图标） -->
+  <!-- 左下角浮动按钮：审计日志 + 设置（仅图标） -->
+  <button id="btn-audit" class="fab-settings fab-audit" title="审计日志（任务/工具/审批/错误）">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>
+  </button>
   <button id="btn-settings" class="fab-settings" title="设置">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
   </button>
@@ -255,6 +258,29 @@ description: 一句话描述技能用途
     </div>
   </div>
 
+  <!-- 审计日志弹窗（R6） -->
+  <div id="modal-audit" class="modal-mask hidden">
+    <div class="modal modal-wide">
+      <h2>🛡 审计日志 <span id="audit-count" class="hint"></span></h2>
+      <p class="hint">自动记录每个任务的目标、模型、审批、工具调用、文件变更、token/耗时/成本与最终是否接受。记录已脱敏。</p>
+      <div class="audit-filters">
+        <button class="btn btn-small audit-filter active" data-cat="all">全部</button>
+        <button class="btn btn-small audit-filter" data-cat="task">任务</button>
+        <button class="btn btn-small audit-filter" data-cat="tool">工具</button>
+        <button class="btn btn-small audit-filter" data-cat="file">文件</button>
+        <button class="btn btn-small audit-filter" data-cat="approval">审批</button>
+        <button class="btn btn-small audit-filter" data-cat="error">错误</button>
+        <button class="btn btn-small audit-filter" data-cat="engine">引擎</button>
+        <span class="audit-spacer"></span>
+        <button id="btn-audit-export" class="btn btn-small btn-primary">📦 导出诊断包</button>
+      </div>
+      <div id="audit-list" class="audit-list"><div class="fs-empty">加载中…</div></div>
+      <div class="modal-actions">
+        <button id="btn-audit-close" class="btn btn-ghost">关闭</button>
+      </div>
+    </div>
+  </div>
+
   <div id="toast" class="toast hidden"></div>
   <script src="core.js"></script>
   <script src="engine.js"></script>
@@ -264,6 +290,7 @@ description: 一句话描述技能用途
   <script src="skills.js"></script>
   <script src="settings.js"></script>
   <script src="memory.js"></script>
+  <script src="audit.js"></script>
   <script src="boot.js"></script>
 </body>
 </html>

@@ -7,6 +7,7 @@ mod services;
 
 use app_state::{migrate_legacy_data_root, AppState};
 use commands::{
+    audit::{audit_accept, audit_export, audit_list},
     engine::{start_engine, start_engine_inner, stop_engine, send_message, respond_approval, interrupt, setup_sandbox, sandbox_status},
     memory::{memory_status, open_memory_panel},
     office::{libreoffice_status, open_in_libreoffice, convert_office},
@@ -44,6 +45,9 @@ pub fn run() {
             memory_pid: Mutex::new(None),
             memory_port: Mutex::new(None),
             session_token: Mutex::new(None),
+            // R6 结构化审计（SQLite）
+            audit: services::audit::AuditStore::open(&root),
+            current_task: Mutex::new(None),
         })
         .invoke_handler(tauri::generate_handler![
             get_settings,
@@ -83,6 +87,9 @@ pub fn run() {
             session_history,
             list_tmp,
             cleanup_tmp,
+            audit_list,
+            audit_accept,
+            audit_export,
         ])
         .setup(|app| {
             // 启动时自动拉起引擎（若已配置 API Key 或内网免密钥）

@@ -1,5 +1,6 @@
 //! Tauri 命令模块聚合。
 
+pub mod audit;
 pub mod engine;
 pub mod memory;
 pub mod office;
