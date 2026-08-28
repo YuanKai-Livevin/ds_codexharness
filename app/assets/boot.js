@@ -91,7 +91,12 @@ async function init() {
     try {
       const imported = await invoke("import_skills", { dir: picked });
       if (imported && imported.length) {
-        toast("已导入 " + imported.length + " 个技能：" + imported.join("、"));
+        const parts = imported.map((s) => {
+          let t = s.name + " v" + (s.version || "1.0.0") + " · " + (s.permissions || "工作区内读写");
+          if (s.replaced) t += "（已备份旧版）";
+          return t;
+        });
+        toast("已导入 " + imported.length + " 个技能：" + parts.join("；"));
       } else {
         toast("所选目录中未找到含 SKILL.md 的技能文件夹", "warn");
       }

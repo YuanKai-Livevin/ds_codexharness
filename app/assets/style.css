@@ -267,16 +267,21 @@ body {
 #skills-toggle { font-weight: 600; color: var(--label-secondary); }
 #skills-body { display: flex; flex-direction: column; gap: 6px; }
 .skills-tip { font-size: 11px; color: var(--label-dimmed); line-height: 1.5; }
-.skills-list { display: flex; flex-direction: column; gap: 4px; max-height: 220px; overflow-y: auto; }
+.skills-list { display: flex; flex-direction: column; gap: 4px; max-height: 300px; overflow-y: auto; }
 .skill-item {
   display: flex; align-items: flex-start; gap: 8px;
   background: var(--bg-base); border: 1px solid var(--border-l1);
   border-radius: 8px; padding: 7px 9px;
 }
 .skill-icon { flex-shrink: 0; font-size: 14px; }
-.skill-body { min-width: 0; }
+.skill-body { min-width: 0; flex: 1; }
 .skill-name { font-size: 12px; font-weight: 600; color: var(--label-primary); font-family: var(--mono); }
 .skill-desc { font-size: 11px; color: var(--label-dimmed); margin-top: 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.skill-chips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 4px; }
+.skill-chip { font-size: 10px; color: var(--label-tertiary); background: var(--code-bg-l2); border: 1px solid var(--border-l1); border-radius: 999px; padding: 1px 7px; font-family: var(--mono); }
+.skill-btns { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+.skill-disabled { opacity: .62; border-style: dashed; }
+.skill-test-out { margin-top: 6px; background: var(--code-bg); border: 1px solid var(--border-l1); border-radius: 6px; padding: 6px 8px; font-family: var(--mono); font-size: 10.5px; color: var(--label-secondary); white-space: pre-wrap; max-height: 180px; overflow-y: auto; }
 .skills-add-menu {
   position: absolute; right: 8px; top: 36px; z-index: 70;
   background: var(--bg-layer-1); border: 1px solid var(--border-l2);
