@@ -72,3 +72,69 @@ pub(crate) async fn open_memory_panel(state: State<'_, AppState>, app: AppHandle
     .map_err(|e| e.to_string())?;
     Ok(())
 }
+
+/// 记忆 API 代理（Rust → 本地记忆服务）：绕开 WebView2 iframe 加载 http 的限制，
+/// 主应用直接经此命令读写记忆数据（本地回环 + 会话令牌鉴权 + 路径白名单）。
+#[tauri::command]
+pub(crate) async fn memory_api(
+    state: State<'_, AppState>,
+    path: String,
+    method: String,
+    body: Option<String>,
+) -> Result<String, String> {
+    use std::io::{Read, Write};
+    // 路径白名单：只允许记忆 API 前缀，杜绝任意路径
+    if !(path.starts_with("/memory/") || path.starts_with("/api/memory/")) {
+        return Err("非法路径（仅允许 /memory/*）".to_string());
+    }
+    let port = *state.memory_port.lock().await;
+    let port = port.ok_or_else(|| "记忆服务未运行".to_string())?;
+    let token = session_token(&state).await?;
+    let method = if method.trim().is_empty() {
+        "GET".to_string()
+    } else {
+        method.trim().to_uppercase()
+    };
+    if !matches!(method.as_str(), "GET" | "POST" | "PATCH" | "DELETE") {
+        return Err(format!("不支持的方法: {}", method));
+    }
+    let body = body.unwrap_or_default();
+    let req = format!(
+        "{} {} HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nAuthorization: Bearer {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+        method,
+        path,
+        port,
+        token,
+        body.len(),
+        body
+    );
+    let mut s = std::net::TcpStream::connect(("127.0.0.1", port))
+        .map_err(|e| format!("连接记忆服务失败: {}", e))?;
+    let _ = s.set_read_timeout(Some(std::time::Duration::from_secs(20)));
+    s.write_all(req.as_bytes()).map_err(|e| format!("发送请求失败: {}", e))?;
+    let mut buf = Vec::new();
+    let mut chunk = [0u8; 8192];
+    loop {
+        match s.read(&mut chunk) {
+            Ok(0) => break,
+            Ok(n) => buf.extend_from_slice(&chunk[..n]),
+            Err(e)
+                if e.kind() == std::io::ErrorKind::WouldBlock
+                    || e.kind() == std::io::ErrorKind::TimedOut =>
+            {
+                break;
+            }
+            Err(e) => return Err(format!("读取响应失败: {}", e)),
+        }
+    }
+    let text = String::from_utf8_lossy(&buf).to_string();
+    let status_ok = text.starts_with("HTTP/1.1 200") || text.starts_with("HTTP/1.0 200");
+    let body_part = text.split("\r\n\r\n").nth(1).unwrap_or("");
+    if !status_ok {
+        return Err(format!(
+            "记忆服务返回错误: {}",
+            body_part.chars().take(300).collect::<String>()
+        ));
+    }
+    Ok(body_part.to_string())
+}

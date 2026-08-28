@@ -113,24 +113,13 @@ async function init() {
   // 引用清除
   $("#refs-clear").addEventListener("click", () => { state.refs = []; renderRefs(); });
 
-  // 内嵌记忆面板：打开按钮 / 重试 / iframe 阶段确认与尺寸联动
+  // 内嵌记忆面板（主应用直接渲染）：打开独立窗口 / 重试 / 阶段总结
   $("#btn-mem-open").addEventListener("click", openMemoryPanel);
   $("#btn-mem-retry").addEventListener("click", setupMemoryCard);
-  window.addEventListener("message", (ev) => {
-    // 仅接受来自当前记忆服务来源（动态端口）的消息
-    if (memoryOrigin && ev.origin !== memoryOrigin) return;
-    const d = ev.data || {};
-    if (d.type === "memory:phase-confirmed") {
-      toast("阶段已归档" + (d.openNewThread ? "，正在开启新阶段对话…" : ""), "ok");
-      if (d.openNewThread) startPhaseThread(d.summary || d.goal || "");
-    } else if (d.type === "memory:size") {
-      // 面板汇报记忆块数量 → 自适应高度（空=文件窗口高，有块=最多 3 张卡）
-      if (typeof d.count === "number") {
-        state.memoryCount = d.count;
-        updateMemoryFrameHeight();
-      }
-    }
-  });
+  $("#btn-phase").addEventListener("click", openPhaseModal);
+  $("#btn-phase-cancel").addEventListener("click", () => $("#modal-phase").classList.add("hidden"));
+  $("#btn-phase-gen").addEventListener("click", generatePhaseSummary);
+  $("#btn-phase-confirm").addEventListener("click", confirmPhaseSummary);
 
   // 输入 @ 触发文件引用面板
   $("#composer").addEventListener("input", onComposerInput);
@@ -156,8 +145,8 @@ async function init() {
   setupMemoryCard();
   updateChatEmptyBg();
   updateMemoryFrameHeight();
-  // 记忆块数量变化 → 面板高度自适应（兜底轮询，避免遗漏 iframe 消息）
-  setInterval(refreshMemoryCount, 20000);
+  // 记忆数据轮询：块数量/水位变化 → 刷新列表与高度
+  setInterval(refreshMemoryList, 20000);
 
   // 轮询引擎状态：无条件以后端为准同步 UI（兜底自动启动竞态与事件丢失）
   setInterval(async () => {

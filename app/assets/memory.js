@@ -2,7 +2,8 @@ async function openMemoryPanel() {
   try {
     const st = await invoke("memory_status").catch(() => null);
     if (st && !st.running) {
-      toast("记忆服务未运行，面板将显示演示数据。");
+      toast("记忆服务未运行，无法打开面板。");
+      return;
     }
     await invoke("open_memory_panel");
   } catch (e) {
@@ -10,62 +11,102 @@ async function openMemoryPanel() {
   }
 }
 
-// ---------- 内嵌记忆面板（侧栏 iframe + 真实水位条 + 阶段联动） ----------
-// R2：动态端口 + 会话令牌（来自 memory_status），不再硬编码 8765
-let memoryOrigin = "http://127.0.0.1:8765";   // 默认值；启动后由 memory_status 刷新
+// ---------- 内嵌记忆面板（主应用直接渲染，经 Rust 代理访问记忆服务） ----------
+// 不再使用 iframe：WebView2 加载 http://127.0.0.1 iframe 不可靠（白屏），
+// 改为 memory_api 命令（Rust 本地回环 + 令牌鉴权）直接读写记忆数据。
+
 let memoryToken = "";
 
+// 记忆 API 代理调用（path 必须以 /memory/ 开头）
+async function memApi(path, method, body) {
+  const r = await invoke("memory_api", { path, method: method || "GET", body: body ? JSON.stringify(body) : null });
+  return JSON.parse(r || "{}");
+}
+
+const MEM_TYPE_LABEL = { fact: "事实", preference: "偏好", task: "任务", code_snippet: "代码", plan: "计划", constraint: "约束", user_defined: "自定义", phase: "阶段" };
+const MEM_STATUS_LABEL = { active: "启用", paused: "暂停", probation: "观察", deprecated: "已归档" };
+
 async function setupMemoryCard() {
-  const frame = $("#memory-frame");
+  const list = $("#memory-list");
   const offline = $("#mem-offline");
   const stateEl = $("#mem-state");
-  if (!frame) return;
-  bindMemoryFrameEvents();
+  if (!list) return;
+  if (typeof resetMemoryList === "function") resetMemoryList();
   try {
     const st = await invoke("memory_status").catch((e) => {
       if (stateEl) stateEl.textContent = "⚠ 读取记忆服务状态失败：" + String(e).slice(0, 60);
       return null;
     });
-    if (st && st.running && st.port && st.token) {
-      memoryOrigin = "http://127.0.0.1:" + st.port;
-      memoryToken = st.token || "";
-      const src = memoryOrigin + "/?token=" + encodeURIComponent(memoryToken);
-      if (frame.src !== src) {
-        frame.src = src;
-        if (stateEl) stateEl.textContent = "面板加载中（端口 " + st.port + "）…";
-      }
-      offline.classList.add("hidden");
-      refreshMemoryCount();
-    } else if (st && st.running) {
-      // running 但端口/令牌缺失（异常态）
-      if (stateEl) stateEl.textContent = "⚠ 记忆服务状态异常（端口/令牌缺失），请重启应用";
-      frame.removeAttribute("src");
-      offline.classList.remove("hidden");
-    } else {
-      if (stateEl) stateEl.textContent = "记忆服务未运行（引擎启动后自动加载）";
-      frame.removeAttribute("src");
-      offline.classList.remove("hidden");
+    if (!st || !st.running) {
+      list.innerHTML = '<div class="fs-empty">记忆服务未运行</div>';
+      if (offline) offline.classList.remove("hidden");
+      if (stateEl) stateEl.textContent = "引擎启动后自动加载记忆服务";
+      return;
     }
-  } catch (e) { /* 保持占位 */ }
+    memoryToken = st.token || "";
+    if (offline) offline.classList.add("hidden");
+    await refreshMemoryList();
+  } catch (e) {
+    list.innerHTML = '<div class="fs-empty">读取失败：' + escapeHtml(String(e).slice(0, 80)) + "</div>";
+    if (stateEl) stateEl.textContent = "⚠ " + String(e).slice(0, 60);
+  }
 }
 
-// iframe 加载事件：面板加载成功/失败给出可见反馈
-function bindMemoryFrameEvents() {
-  const frame = $("#memory-frame");
+async function refreshMemoryList() {
+  const list = $("#memory-list");
   const stateEl = $("#mem-state");
-  if (!frame || frame.dataset.bound) return;
-  frame.dataset.bound = "1";
-  frame.addEventListener("load", () => {
-    if (stateEl) stateEl.textContent = "✅ 记忆面板已加载";
-    setTimeout(() => { if (stateEl) stateEl.textContent = ""; }, 6000);
-  });
-  frame.addEventListener("error", () => {
-    if (stateEl) stateEl.textContent = "⚠ 记忆面板加载失败（可点 ⧉ 用浏览器打开查看）";
-  });
+  if (!list) return;
+  try {
+    const [blk, st] = await Promise.all([
+      memApi("/memory/blocks", "GET"),
+      memApi("/memory/status", "GET"),
+    ]);
+    const blocks = (blk && blk.blocks) || [];
+    state.memoryCount = blocks.length;
+    renderMemoryList(blocks);
+    updateMemoryFrameHeight();
+    // 更新主窗口水位条
+    if (st) {
+      const t = st.conversation_tokens;
+      if (t != null) {
+        updateMemBar(t);
+      }
+    }
+    const stateEl2 = $("#mem-state");
+    if (stateEl2) stateEl2.textContent = blocks.length ? "✅ 记忆服务已连接 · " + blocks.length + " 个记忆块" : "✅ 记忆服务已连接";
+  } catch (e) {
+    list.innerHTML = '<div class="fs-empty">读取失败：' + escapeHtml(String(e).slice(0, 80)) + "</div>";
+    if (stateEl) stateEl.textContent = "⚠ " + String(e).slice(0, 60);
+  }
 }
 
-// 记忆面板高度自适应：
-//   空 → 与「工作区文件」卡片同高；有块 → 最多显示 3 张卡片，再多内部滚动
+function renderMemoryList(blocks) {
+  const list = $("#memory-list");
+  if (!list) return;
+  if (!blocks.length) {
+    list.innerHTML = '<div class="fs-empty">还没有记忆块。<br>完成任务后可点下方「阶段总结」归档本阶段关键信息。</div>';
+    return;
+  }
+  list.innerHTML = "";
+  for (const b of blocks) {
+    const el = document.createElement("div");
+    el.className = "mem-card" + (b.status === "paused" ? " mem-paused" : "");
+    const typeLabel = MEM_TYPE_LABEL[b.type] || b.type;
+    const stars = "★".repeat(Math.min(5, b.importance || 0)) + '<span class="mem-star-empty">' + "★".repeat(Math.max(0, 5 - (b.importance || 0))) + "</span>";
+    el.innerHTML =
+      '<div class="mem-card-head">' +
+        '<span class="mem-tag">' + escapeHtml(typeLabel) + "</span>" +
+        '<span class="mem-imp">' + stars + "</span>" +
+        (b.is_pinned ? '<span class="mem-pin" title="已置顶">🔒</span>' : "") +
+        '<span class="mem-status">' + escapeHtml(MEM_STATUS_LABEL[b.status] || b.status) + "</span>" +
+      "</div>" +
+      '<div class="mem-card-content">' + escapeHtml(b.content || "") + "</div>";
+    el.title = "创建于记忆池第 " + (b.source_round || "?") + " 轮 · " + (b.token_count || 0) + " tokens";
+    list.appendChild(el);
+  }
+}
+
+// 记忆面板高度自适应（块多时内部滚动）
 function updateMemoryFrameHeight() {
   const wrap = $("#memory-frame-wrap");
   if (!wrap) return;
@@ -74,30 +115,16 @@ function updateMemoryFrameHeight() {
   const n = state.memoryCount;
   let h;
   if (n == null || n === 0) {
-    h = fileH;                        // 空态：与工作区文件窗口同高
+    h = fileH;
   } else {
-    h = Math.min(n, 3) * 82 + 74;     // 3 张卡 + 底部按钮 + 间距
+    h = Math.min(n, 3) * 64 + 60;
   }
   h = Math.max(140, Math.min(h, 400));
   wrap.style.height = h + "px";
 }
 
-async function refreshMemoryCount() {
-  if (!memoryOrigin) return;
-  try {
-    const headers = {};
-    if (memoryToken) headers["Authorization"] = "Bearer " + memoryToken;
-    const ctl = new AbortController();
-    const timer = setTimeout(() => ctl.abort(), 3000);
-    const r = await fetch(memoryOrigin + "/api/memory/blocks", { headers, signal: ctl.signal }).catch(() => null);
-    clearTimeout(timer);
-    if (!r || !r.ok) return;
-    const d = await r.json().catch(() => null);
-    if (d && Array.isArray(d.blocks)) {
-      state.memoryCount = d.blocks.length;
-      updateMemoryFrameHeight();
-    }
-  } catch (e) { /* 保持当前高度 */ }
+function resetMemoryList() {
+  // 占位
 }
 
 // 主窗口水位条（与记忆面板同源数据：codex 每轮 input tokens）
@@ -120,8 +147,61 @@ function updateMemBar(ctxTokens) {
   }
 }
 
-// 阶段确认联动：面板确认「同时开启新阶段对话」后，新建会话并把阶段总结作为首条交接消息。
-// 交接消息以「阶段交接」卡片展示，不伪装成用户输入；发送给模型时带交接标记。
+// ---------- 阶段总结（主应用内弹窗） ----------
+
+async function openPhaseModal() {
+  $("#phase-goal-main").value = "";
+  $("#phase-preview-main").classList.add("hidden");
+  $("#phase-preview-main").textContent = "";
+  $("#btn-phase-confirm").disabled = true;
+  $("#phase-new-thread-main").checked = false;
+  $("#phase-gen-state").textContent = "";
+  $("#modal-phase").classList.remove("hidden");
+}
+
+async function generatePhaseSummary() {
+  const goal = $("#phase-goal-main").value.trim();
+  const btn = $("#btn-phase-gen");
+  const stateEl = $("#phase-gen-state");
+  btn.disabled = true;
+  btn.textContent = "生成中…";
+  stateEl.textContent = "";
+  try {
+    const r = await memApi("/memory/phase/preview", "POST", { goal });
+    if (!r.ok && !r.summary) throw new Error(r.message || "生成失败");
+    state.phaseSummary = r.summary || "";
+    const pv = $("#phase-preview-main");
+    pv.classList.remove("hidden");
+    pv.textContent = state.phaseSummary +
+      (r.tokens != null ? "\n\n（约 " + r.tokens + " tokens · 基于 " + (r.blocks_used || 0) + " 个记忆块）" : "");
+    $("#btn-phase-confirm").disabled = false;
+    stateEl.textContent = "已生成，确认后旧记忆块将归档";
+  } catch (e) {
+    stateEl.textContent = "生成失败：" + String(e).slice(0, 60);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "✨ 生成总结";
+  }
+}
+
+async function confirmPhaseSummary() {
+  const goal = $("#phase-goal-main").value.trim();
+  const openNew = $("#phase-new-thread-main").checked;
+  if (!state.phaseSummary) { toast("请先生成总结", "warn"); return; }
+  try {
+    const r = await memApi("/memory/phase/confirm", "POST", { goal, summary: state.phaseSummary, open_new_thread: openNew });
+    $("#modal-phase").classList.add("hidden");
+    toast(r.message || "阶段已归档", "ok");
+    if (openNew && state.phaseSummary) {
+      await startPhaseThread(state.phaseSummary);
+    }
+    await refreshMemoryList();
+  } catch (e) {
+    toast("归档失败：" + e, "err");
+  }
+}
+
+// 阶段确认联动：开启新阶段对话（首条消息 = 阶段总结，带交接标记）
 async function startPhaseThread(firstMessage) {
   const text = (firstMessage || "").trim();
   if (!text) { toast("没有阶段总结内容，已跳过新对话", "warn"); return; }

@@ -9,7 +9,7 @@ use app_state::{migrate_legacy_data_root, AppState};
 use commands::{
     audit::{audit_accept, audit_export, audit_list},
     engine::{start_engine, start_engine_inner, stop_engine, send_message, respond_approval, interrupt, setup_sandbox, sandbox_status},
-    memory::{memory_status, open_memory_panel},
+    memory::{memory_status, open_memory_panel, memory_api},
     office::{libreoffice_status, open_in_libreoffice, convert_office},
     sessions::{list_sessions, current_session, new_session, switch_session, delete_session, session_history, list_tmp, cleanup_tmp},
     settings::{get_settings, save_settings, save_api_key, has_api_key, get_api_key_masked, test_connection, get_status},
@@ -84,6 +84,7 @@ pub fn run() {
             sandbox_status,
             memory_status,
             open_memory_panel,
+            memory_api,
             list_sessions,
             current_session,
             new_session,

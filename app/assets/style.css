@@ -560,6 +560,17 @@ body {
   transition: height .25s ease;
 }
 #memory-frame { width: 100%; height: 100%; border: none; display: block; background: transparent; }
+/* 主应用直接渲染的记忆卡列表（替代 iframe） */
+.mem-list { height: 100%; overflow-y: auto; padding: 4px; display: flex; flex-direction: column; gap: 4px; }
+.mem-card { border: 1px solid var(--border-l1); border-radius: 8px; padding: 6px 8px; background: var(--bg-layer-1); }
+.mem-card.mem-paused { opacity: .6; }
+.mem-card-head { display: flex; align-items: center; gap: 6px; font-size: 11px; margin-bottom: 2px; }
+.mem-tag { background: var(--brand-soft); color: var(--brand-500); border-radius: 4px; padding: 0 6px; font-size: 10px; font-weight: 600; }
+.mem-imp { color: #eab308; font-size: 10px; }
+.mem-star-empty { color: var(--border-l2); }
+.mem-pin { font-size: 10px; }
+.mem-status { margin-left: auto; font-size: 10px; color: var(--label-dimmed); }
+.mem-card-content { font-size: 12px; color: var(--label-secondary); word-break: break-all; line-height: 1.45; }
 .mem-offline {
   display: flex; align-items: center; justify-content: center; gap: 10px;
   height: 60px; font-size: 12px; color: var(--label-dimmed);

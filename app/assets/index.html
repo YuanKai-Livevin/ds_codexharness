@@ -72,12 +72,15 @@
             <span id="mem-text">上下文 0 / 60k tokens</span>
           </div>
           <div id="memory-frame-wrap" class="memory-frame-wrap">
-            <iframe id="memory-frame" title="记忆面板（记忆块管理 · 阶段总结 · 压缩交接）"></iframe>
+            <div id="memory-list" class="mem-list"><div class="fs-empty">记忆面板加载中…</div></div>
           </div>
           <div id="mem-state" class="mem-state"></div>
           <div id="mem-offline" class="mem-offline hidden">
             <span>记忆服务未运行</span>
             <button id="btn-mem-retry" class="btn btn-small">重试</button>
+          </div>
+          <div class="row" style="margin-top:6px">
+            <button id="btn-phase" class="btn btn-small btn-primary btn-block" title="生成当前阶段总结并归档旧记忆">📋 阶段总结</button>
           </div>
         </section>
 
@@ -306,6 +309,29 @@ description: 一句话描述技能用途
       <div id="tasks-list" class="audit-list"><div class="fs-empty">加载中…</div></div>
       <div class="modal-actions">
         <button id="btn-tasks-close" class="btn btn-ghost">关闭</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 阶段总结弹窗（主应用内，替代 iframe 面板） -->
+  <div id="modal-phase" class="modal-mask hidden">
+    <div class="modal">
+      <h2>📋 阶段总结</h2>
+      <label>本阶段说明（可选，帮助总结更精准）
+        <textarea id="phase-goal-main" rows="2" placeholder="例如：完成 2025 年销售数据汇总与同比分析" style="width:100%;box-sizing:border-box"></textarea>
+      </label>
+      <div class="row" style="margin-top:8px">
+        <button id="btn-phase-gen" class="btn btn-small btn-primary">✨ 生成总结</button>
+        <span id="phase-gen-state" class="hint"></span>
+      </div>
+      <pre id="phase-preview-main" class="code-block hidden" style="margin-top:8px;white-space:pre-wrap;max-height:180px;overflow-y:auto"></pre>
+      <label class="row" style="align-items:center;gap:8px;font-size:13px;color:var(--label-secondary);margin-top:10px">
+        <input type="checkbox" id="phase-new-thread-main" style="width:16px;height:16px;accent-color:var(--brand-500)" />
+        同时开启新阶段对话（首条消息 = 阶段总结，释放上下文）
+      </label>
+      <div class="modal-actions">
+        <button id="btn-phase-cancel" class="btn btn-ghost">取消</button>
+        <button id="btn-phase-confirm" class="btn btn-primary" disabled>确认并归档</button>
       </div>
     </div>
   </div>
