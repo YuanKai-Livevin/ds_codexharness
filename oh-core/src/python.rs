@@ -76,15 +76,19 @@ impl Bundled {
         self.root.join("codex-bin").join("codex-windows-sandbox-setup.exe")
     }
 
-    /// office-tools 工具包目录（R10；兼容生产布局 office-tools 与开发布局 vendor/office-tools）。
+    /// office-tools 工具包目录（R10；兼容生产布局 office-tools 与开发布局 tools/office-tools）。
     pub fn office_tools_dir(&self) -> PathBuf {
         let a = self.root.join("office-tools");
         if a.join("otools.py").exists() {
             return a;
         }
-        let b = self.root.join("vendor").join("office-tools");
+        let b = self.root.join("tools").join("office-tools");
         if b.join("otools.py").exists() {
             return b;
+        }
+        let c = self.root.join("vendor").join("office-tools");
+        if c.join("otools.py").exists() {
+            return c;
         }
         a
     }

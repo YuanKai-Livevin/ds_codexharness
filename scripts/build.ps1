@@ -55,7 +55,7 @@ Get-ChildItem (Join-Path $dist "memory-block") -Recurse -Directory -Filter "__py
 Write-Output "  memory block copied"
 
 # 确定性办公工具包（R10 office-tools：otools.py + otools_lib + SKILL.md）
-Copy-Item -Recurse "$root\vendor\office-tools" (Join-Path $dist "office-tools") -Force
+Copy-Item -Recurse "$root\tools\office-tools" (Join-Path $dist "office-tools") -Force
 Get-ChildItem (Join-Path $dist "office-tools") -Recurse -Directory -Filter "__pycache__" | Remove-Item -Recurse -Force
 Write-Output "  office-tools copied"
 
