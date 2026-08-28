@@ -146,9 +146,10 @@ async fn start_engine_inner_impl(
     // 3) 准备 CODEX_HOME（config.toml + 审批规则），桥接模式 base_url 指向网关
     CodexServer::prepare_home(&state.codex_home, &settings, gateway_port)?;
 
-    // 确保 SKILLS 仓库目录存在
+    // 确保 SKILLS 仓库目录存在，并种子内置 office-tools 技能（R10，仅首次）
     let skills_repo = data_root().join("skills");
     std::fs::create_dir_all(&skills_repo).map_err(|e| format!("无法创建技能仓库: {}", e))?;
+    seed_office_tools_skill(&bundled, &skills_repo);
     let skills_repo_str = skills_repo.to_string_lossy().to_string();
 
     // 4) 桥接模式下，引擎的 API Key = 本地网关会话令牌（网关据此鉴权）
@@ -424,6 +425,40 @@ async fn audit_workspace_or(st: &State<'_, AppState>) -> String {
     }
     let s = st.settings.lock().await.clone();
     s.workspace_path
+}
+
+/// 种子内置 office-tools 技能到技能仓库（缺失才复制，保留用户修改）。
+fn seed_office_tools_skill(bundled: &Bundled, skills_repo: &std::path::Path) {
+    let src = bundled.office_tools_dir();
+    if !src.join("SKILL.md").exists() || !src.join("otools.py").exists() {
+        return;
+    }
+    let dst = skills_repo.join("office-tools");
+    if dst.join("SKILL.md").exists() {
+        return; // 已存在，不覆盖
+    }
+    if let Err(e) = copy_dir_recursive(&src, &dst) {
+        eprintln!("seed office-tools skill failed: {}", e);
+    }
+}
+
+fn copy_dir_recursive(src: &std::path::Path, dst: &std::path::Path) -> Result<(), String> {
+    std::fs::create_dir_all(dst).map_err(|e| e.to_string())?;
+    for entry in std::fs::read_dir(src).map_err(|e| e.to_string())? {
+        let entry = entry.map_err(|e| e.to_string())?;
+        let from = entry.path();
+        let to = dst.join(entry.file_name());
+        if entry.file_type().map_err(|e| e.to_string())?.is_dir() {
+            copy_dir_recursive(&from, &to)?;
+        } else {
+            // 跳过 Python 缓存
+            if entry.file_name() == "__pycache__" {
+                continue;
+            }
+            std::fs::copy(&from, &to).map_err(|e| e.to_string())?;
+        }
+    }
+    Ok(())
 }
 
 /// 启动引擎：拉起 codex app-server 并建立会话。

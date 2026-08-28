@@ -54,6 +54,11 @@ Copy-Item -Recurse "$root\frontend" (Join-Path $dist "memory-block\frontend") -F
 Get-ChildItem (Join-Path $dist "memory-block") -Recurse -Directory -Filter "__pycache__" | Remove-Item -Recurse -Force
 Write-Output "  memory block copied"
 
+# 确定性办公工具包（R10 office-tools：otools.py + otools_lib + SKILL.md）
+Copy-Item -Recurse "$root\vendor\office-tools" (Join-Path $dist "office-tools") -Force
+Get-ChildItem (Join-Path $dist "office-tools") -Recurse -Directory -Filter "__pycache__" | Remove-Item -Recurse -Force
+Write-Output "  office-tools copied"
+
 Write-Output "== [4/4] Summary =="
 $size = (Get-ChildItem $dist -Recurse -File | Measure-Object -Property Length -Sum).Sum / 1MB
 Write-Output ("dist\OfficeHarness ready, {0:N1} MB" -f $size)

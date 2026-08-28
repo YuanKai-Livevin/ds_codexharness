@@ -76,6 +76,19 @@ impl Bundled {
         self.root.join("codex-bin").join("codex-windows-sandbox-setup.exe")
     }
 
+    /// office-tools 工具包目录（R10；兼容生产布局 office-tools 与开发布局 vendor/office-tools）。
+    pub fn office_tools_dir(&self) -> PathBuf {
+        let a = self.root.join("office-tools");
+        if a.join("otools.py").exists() {
+            return a;
+        }
+        let b = self.root.join("vendor").join("office-tools");
+        if b.join("otools.py").exists() {
+            return b;
+        }
+        a
+    }
+
     /// LibreOffice 安装目录（兼容生产布局 LibreOffice 与开发布局 vendor/libreoffice/<ver>）。
     pub fn libreoffice_dir(&self) -> PathBuf {
         let a = self.root.join("LibreOffice");
