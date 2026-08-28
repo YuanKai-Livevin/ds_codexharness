@@ -161,10 +161,12 @@ function clearMessages() {
   // 保留空态背景元素，只清除问答消息
   const m = $("#messages");
   m.querySelectorAll(":scope > .msg").forEach((el) => el.remove());
+  m.querySelectorAll(":scope > .plan-card").forEach((el) => el.remove());
   state.currentAssistant = null;
   state.currentCmd = null;
   state.currentReason = null;
   state.approvalQueue = [];
   state.pendingApproval = null;
+  if (typeof resetPlan === "function") resetPlan();
   updateChatEmptyBg();
 }
