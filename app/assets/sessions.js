@@ -89,6 +89,8 @@ async function switchSession(id) {
 function renderHistory(history) {
   let lastStatus = "";
   let lastEl = null;
+  let cmdCount = 0;
+  const showCmds = !!(state.settings && state.settings.show_commands);
   for (const h of history || []) {
     if (h.status && h.status !== lastStatus) {
       if (lastEl) appendTurnStatus(lastEl, lastStatus);
@@ -96,6 +98,11 @@ function renderHistory(history) {
       lastEl = null;
     }
     if (h.kind === "command") {
+      cmdCount++;
+      if (!showCmds) {
+        // 隐藏命令细节：只计数，不渲染命令块
+        continue;
+      }
       const wrap = buildHistoryCmdBlock(h.command, h.output, h.status);
       $("#messages").appendChild(wrap);
       lastEl = wrap;
@@ -118,6 +125,13 @@ function renderHistory(history) {
     }
   }
   if (lastEl && lastStatus) appendTurnStatus(lastEl, lastStatus);
+  // 隐藏命令细节时：追加一行「共执行 N 次工具调用」统计
+  if (!showCmds && cmdCount > 0) {
+    const line = document.createElement("div");
+    line.className = "turn-status";
+    line.textContent = "💻 共执行 " + cmdCount + " 次工具调用（在设置中打开「显示命令执行细节」可查看）";
+    $("#messages").appendChild(line);
+  }
   scrollBottom();
   updateChatEmptyBg();
 }

@@ -33,6 +33,8 @@ pub struct AppSettings {
     /// 使用内置翻译层：true 时引擎走本地 /responses→/chat/completions 翻译器，
     /// 适用于内网网关仅支持 chat/completions 的场景。
     pub use_bridge: bool,
+    /// 是否在聊天区显示命令执行细节（命令块/输出）；默认 false = 只显示任务计划与进度。
+    pub show_commands: bool,
 }
 
 impl Default for AppSettings {
@@ -56,6 +58,7 @@ impl Default for AppSettings {
             log_dir: "C:\\HARNESS\\logs".to_string(),
             no_auth: false,
             use_bridge: false,
+            show_commands: false,
         }
     }
 }

@@ -372,6 +372,16 @@ body {
 /* 轮次结束状态徽标（历史恢复） */
 .turn-status { text-align: center; font-size: 12px; color: var(--label-dimmed); margin: 2px 0 8px; user-select: none; }
 
+/* 任务计划卡（DSH 风格：只显示计划与进度，不刷命令行） */
+.plan-card { border: 1px solid var(--border-l2); border-radius: 10px; padding: 10px 12px; margin: 6px 0; background: var(--bg-layer-1); }
+.plan-title { font-weight: 700; font-size: 13px; margin-bottom: 6px; color: var(--label-primary); }
+.plan-step { display: flex; gap: 8px; align-items: baseline; font-size: 12.5px; padding: 2px 0; }
+.plan-dot { flex-shrink: 0; width: 16px; text-align: center; }
+.plan-step.plan-pending { color: var(--label-dimmed); }
+.plan-step.plan-running { color: var(--brand-500); font-weight: 600; }
+.plan-step.plan-done { color: var(--ok); }
+.plan-step.plan-failed { color: var(--danger); }
+
 /* 思考摘要 */
 .reasoning { align-self: flex-start; max-width: 88%; font-size: 12px; color: var(--label-dimmed); background: transparent; border: 1px dashed var(--border-l2); border-radius: 8px; padding: 6px 10px; cursor: pointer; user-select: none; }
 .reasoning .r-body { display: none; white-space: pre-wrap; margin-top: 6px; color: var(--label-tertiary); }

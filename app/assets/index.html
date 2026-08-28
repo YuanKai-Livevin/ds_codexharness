@@ -207,6 +207,11 @@ description: 一句话描述技能用途
             <span id="test-result" class="test-result"></span>
           </div>
         </label>
+        <label class="row" style="align-items:center;gap:8px;font-size:13px;color:var(--label-secondary)">
+          <input type="checkbox" id="set-showcmd" style="width:16px;height:16px;accent-color:var(--brand-500)" />
+          显示命令执行细节（调试用）
+          <div class="sandbox-tip" style="width:100%">关闭时任务执行只显示「任务计划 + 进度」与结果，命令和输出默认隐藏；勾选后恢复显示每个命令块（含可展开的输出）。</div>
+        </label>
         <label>Windows 沙箱方式
           <select id="set-winsandbox">
             <option value="unelevated">受限令牌（推荐，免授权开箱即用）</option>

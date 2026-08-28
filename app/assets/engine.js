@@ -58,21 +58,14 @@ function handleEvent(ev) {
     case "turnStarted":
       state.streaming = true;
       state.currentCmd = null;
+      resetPlan();
       showRunBar("任务运行中…", null);
       break;
     case "agentDelta":
-      if (!state.currentAssistant) {
-        state.currentAssistant = addMsg("assistant", "");
-      }
-      renderAssistantText(state.currentAssistant, ev.text);
-      scrollBottom();
+      routeAgentText(ev.text);
       break;
     case "agentMessage":
-      if (!state.currentAssistant) {
-        state.currentAssistant = addMsg("assistant", "");
-      }
-      renderAssistantText(state.currentAssistant, ev.text);
-      scrollBottom();
+      routeAgentText(ev.text);
       break;
     case "reasoningDelta":
       if (!state.currentReason) {
@@ -86,6 +79,11 @@ function handleEvent(ev) {
       state.currentReason.querySelector(".r-body").textContent += ev.text;
       break;
     case "commandStarted": {
+      // 关闭「显示命令细节」时：只驱动任务计划进度，不渲染命令块
+      if (!showCommandsSetting()) {
+        advancePlan("running", ev.command);
+        break;
+      }
       // 命令块默认折叠：只显示一行命令，点击展开输出（减少噪音）
       const wrap = document.createElement("div");
       wrap.className = "cmd-wrap";
@@ -120,7 +118,7 @@ function handleEvent(ev) {
       break;
     }
     case "commandOutput":
-      if (state.currentCmd && state.currentCmd.itemId === ev.itemId) {
+      if (showCommandsSetting() && state.currentCmd && state.currentCmd.itemId === ev.itemId) {
         state.currentCmd.out.textContent += ev.output;
         state.currentCmd._hasOut = true;
         if (state.currentCmd._open) {
@@ -129,6 +127,10 @@ function handleEvent(ev) {
       }
       break;
     case "commandCompleted":
+      if (!showCommandsSetting()) {
+        advancePlan(ev.status === "completed" ? "done" : "failed", ev.command);
+        break;
+      }
       if (state.currentCmd && state.currentCmd.itemId === ev.itemId) {
         if (ev.output) {
           state.currentCmd.out.textContent += ev.output;
@@ -172,6 +174,17 @@ function handleEvent(ev) {
       break;
     case "turnCompleted": {
       state.streaming = false;
+      // 收尾任务计划：未闭合的计划段先成卡，再按结果标记全部步骤
+      if (state.planPhase === "plan") finalizePlan();
+      if (state.plan && state.plan.length) {
+        const ok = ev.status === "completed";
+        state.plan.forEach((s) => {
+          if (s.status === "pending" || s.status === "running") {
+            s.status = ok ? "done" : "failed";
+            renderPlanStep(s);
+          }
+        });
+      }
       if (state.currentReason) {
         state.currentReason.querySelector(".r-head").textContent = "🧠 思考摘要（点击展开）";
         state.currentReason = null;
@@ -404,6 +417,151 @@ async function stopEngine() {
     toast("引擎已停止");
   } catch (e) {
     toast("停止失败：" + e, "err");
+  }
+}
+
+// ---------- 任务计划与进度（DSH 风格） ----------
+
+// 是否显示命令细节（设置开关，默认隐藏）
+function showCommandsSetting() {
+  return !!(state.settings && state.settings.show_commands);
+}
+
+function resetPlan() {
+  state.plan = null;
+  state.planEl = null;
+  state.planRaw = "";
+  state.planPhase = "text";
+}
+
+// 把助手文本流按「普通文本 / 【执行计划】」分流：
+// 计划内容进计划卡，其余文字进模型气泡
+function routeAgentText(text) {
+  const TAG = /【([^】]+)】/;
+  let rest = text || "";
+  while (rest.length) {
+    if (state.planPhase === "plan") {
+      const m = TAG.exec(rest);
+      if (m && m.index === 0) {
+        // 下一标签开始 → 计划段结束，成卡；标签本身留在普通文本
+        finalizePlan();
+        state.planPhase = "text";
+        continue;
+      }
+      if (m && m.index > 0) {
+        state.planRaw += rest.slice(0, m.index);
+        rest = rest.slice(m.index);
+        continue;
+      }
+      state.planRaw += rest;
+      rest = "";
+    } else {
+      const idx = rest.indexOf("【执行计划】");
+      if (idx >= 0) {
+        if (idx > 0) appendAssistantText(rest.slice(0, idx));
+        state.planPhase = "plan";
+        rest = rest.slice(idx + "【执行计划】".length);
+        continue;
+      }
+      appendAssistantText(rest);
+      rest = "";
+    }
+  }
+  scrollBottom();
+}
+
+function appendAssistantText(t) {
+  if (!t) return;
+  if (!state.currentAssistant) {
+    state.currentAssistant = addMsg("assistant", "");
+  }
+  renderAssistantText(state.currentAssistant, t);
+}
+
+// 计划文本 → 步骤数组（编号/圆点前缀剥离，每非空行一步，上限 12）
+function parsePlanSteps(raw) {
+  const steps = [];
+  for (const line of (raw || "").split("\n")) {
+    const t = line.trim();
+    if (!t) continue;
+    const m = t.match(/^(?:\d+[\.、\)]|[-*•])\s*(.*)$/);
+    steps.push({ text: (m ? m[1] : t).slice(0, 80), status: "pending" });
+    if (steps.length >= 12) break;
+  }
+  return steps;
+}
+
+// 渲染「📋 任务计划」卡片（插在模型气泡之后）
+function finalizePlan() {
+  const raw = state.planRaw || "";
+  const steps = parsePlanSteps(raw);
+  state.planRaw = "";
+  if (!steps.length || state.planEl) return;
+  state.plan = steps;
+  const card = document.createElement("div");
+  card.className = "plan-card";
+  const title = document.createElement("div");
+  title.className = "plan-title";
+  title.textContent = "📋 任务计划";
+  card.appendChild(title);
+  for (const s of steps) {
+    const row = document.createElement("div");
+    row.className = "plan-step plan-pending";
+    const dot = document.createElement("span");
+    dot.className = "plan-dot";
+    dot.textContent = "○";
+    const txt = document.createElement("span");
+    txt.textContent = s.text;
+    row.append(dot, txt);
+    s.dom = row;
+    s.dot = dot;
+    card.appendChild(row);
+  }
+  const anchor = state.currentAssistant ? state.currentAssistant.parentElement : null;
+  if (anchor && anchor.parentElement) {
+    anchor.insertAdjacentElement("afterend", card);
+  } else {
+    $("#messages").appendChild(card);
+  }
+  state.planEl = card;
+  scrollBottom();
+}
+
+function renderPlanStep(s) {
+  if (!s || !s.dom) return;
+  const map = {
+    pending: ["plan-pending", "○"],
+    running: ["plan-running", "⟳"],
+    done: ["plan-done", "✔"],
+    failed: ["plan-failed", "✘"],
+  };
+  const [cls, dot] = map[s.status] || map.pending;
+  s.dom.className = "plan-step " + cls;
+  if (s.dot) s.dot.textContent = dot;
+}
+
+// 命令事件驱动计划进度（命令细节隐藏时）
+function advancePlan(status, cmd) {
+  void cmd;
+  if (status === "running") {
+    const step = state.plan && state.plan.find((s) => s.status === "pending");
+    if (step) {
+      step.status = "running";
+      renderPlanStep(step);
+      showRunBar("正在执行：" + step.text.slice(0, 28) + (step.text.length > 28 ? "…" : ""), null);
+    } else {
+      showRunBar("任务执行中…", null);
+    }
+    return;
+  }
+  // done / failed
+  const step = state.plan
+    ? (state.plan.find((s) => s.status === "running") || state.plan.find((s) => s.status === "pending"))
+    : null;
+  if (step) {
+    step.status = status === "done" ? "done" : "failed";
+    renderPlanStep(step);
+    showRunBar((status === "done" ? "✔ " : "⚠ ") + step.text.slice(0, 28) + (step.text.length > 28 ? "…" : ""), null);
   }
 }
 

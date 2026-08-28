@@ -9,6 +9,7 @@ async function openSettings() {
     $("#set-logdir").value = s.log_dir || "C:\\HARNESS\\logs";
     $("#set-noauth").checked = !!s.no_auth;
     $("#set-bridge").checked = !!s.use_bridge;
+    $("#set-showcmd").checked = !!s.show_commands;
     $("#set-key").value = "";
     state.apiKey = "";
     updateWinSandboxTip();
@@ -81,6 +82,7 @@ async function saveSettings() {
     log_dir: $("#set-logdir").value.trim() || "C:\\HARNESS\\logs",
     no_auth: $("#set-noauth").checked,
     use_bridge: $("#set-bridge").checked,
+    show_commands: $("#set-showcmd").checked,
     onboarded: true,
   };
   try {
