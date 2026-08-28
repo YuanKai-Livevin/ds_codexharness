@@ -60,8 +60,8 @@ function handleEvent(ev) {
     case "turnStarted":
       state.streaming = true;
       state.currentCmd = null;
+      state.currentReason = null;   // 每回合新的思考块
       resetPlan();
-      openReasonPanel();
       showRunBar("任务运行中…", null);
       break;
     case "agentDelta":
@@ -557,44 +557,32 @@ function advancePlan(status, cmd) {
   }
 }
 
-// ---------- 持续思考面板（推理实时追加，可收起） ----------
-
-function openReasonPanel() {
-  const panel = $("#reason-panel");
-  const body = $("#reason-panel-body");
-  const title = $("#reason-panel-title");
-  if (!panel || !body) return;
-  body.textContent = "";
-  panel.classList.remove("hidden");
-  panel.classList.remove("collapsed");
-  if (title) title.textContent = "🧠 思考过程";
-  state.reasonOpen = true;
-}
+// ---------- 主消息流思考块（首个推理增量时创建，默认展开，持续追加） ----------
 
 function appendReason(text) {
-  const body = $("#reason-panel-body");
-  if (!body) return;
-  if (!state.reasonOpen) {
-    const panel = $("#reason-panel");
-    if (panel) panel.classList.remove("hidden");
+  if (!state.currentReason) {
+    state.currentReason = addMsg("assistant", "", "reasoning open");
+    state.currentReason.innerHTML =
+      '<div class="r-head">🧠 思考过程（实时，点击折叠）</div><div class="r-body"></div>';
+    state.currentReason.querySelector(".r-head").addEventListener("click", () => {
+      state.currentReason.classList.toggle("open");
+    });
   }
+  const body = state.currentReason.querySelector(".r-body");
   body.textContent += text || "";
   body.scrollTop = body.scrollHeight;
+  scrollBottom();
 }
 
 function finishReasonPanel(status) {
-  const title = $("#reason-panel-title");
-  if (!title) return;
-  const ok = status === "completed";
-  title.textContent = ok
-    ? "🧠 本轮思考已结束（点击右上角收起）"
-    : "⚠ 本轮思考结束（" + (status || "未完成") + "）";
-}
-
-function toggleReasonPanel() {
-  const panel = $("#reason-panel");
-  if (!panel) return;
-  panel.classList.toggle("collapsed");
+  if (!state.currentReason) return;
+  const body = state.currentReason.querySelector(".r-body");
+  const sep = document.createElement("div");
+  sep.className = "r-end";
+  sep.textContent = "—— 本轮思考结束" + (status === "completed" ? "" : "（" + (status || "未完成") + "）") + " ——";
+  body.appendChild(sep);
+  body.scrollTop = body.scrollHeight;
+  state.currentReason = null;
 }
 
 // ---------- 初始化 ----------

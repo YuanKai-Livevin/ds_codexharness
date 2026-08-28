@@ -15,8 +15,6 @@ async function init() {
   document.querySelectorAll(".task-filter").forEach((b) => {
     b.addEventListener("click", () => setTaskFilter(b.dataset.st));
   });
-  // 持续思考面板：收起/展开
-  $("#reason-panel-close").addEventListener("click", toggleReasonPanel);
   $("#btn-settings-cancel").addEventListener("click", () => $("#modal-settings").classList.add("hidden"));
   $("#btn-settings-save").addEventListener("click", saveSettings);
   $("#btn-onboard-go").addEventListener("click", () => {

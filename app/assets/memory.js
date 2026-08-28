@@ -18,23 +18,50 @@ let memoryToken = "";
 async function setupMemoryCard() {
   const frame = $("#memory-frame");
   const offline = $("#mem-offline");
+  const stateEl = $("#mem-state");
   if (!frame) return;
+  bindMemoryFrameEvents();
   try {
-    const st = await invoke("memory_status").catch(() => null);
-    if (st && st.running && st.port) {
+    const st = await invoke("memory_status").catch((e) => {
+      if (stateEl) stateEl.textContent = "⚠ 读取记忆服务状态失败：" + String(e).slice(0, 60);
+      return null;
+    });
+    if (st && st.running && st.port && st.token) {
       memoryOrigin = "http://127.0.0.1:" + st.port;
       memoryToken = st.token || "";
       const src = memoryOrigin + "/?token=" + encodeURIComponent(memoryToken);
       if (frame.src !== src) {
         frame.src = src;
+        if (stateEl) stateEl.textContent = "面板加载中（端口 " + st.port + "）…";
       }
       offline.classList.add("hidden");
       refreshMemoryCount();
+    } else if (st && st.running) {
+      // running 但端口/令牌缺失（异常态）
+      if (stateEl) stateEl.textContent = "⚠ 记忆服务状态异常（端口/令牌缺失），请重启应用";
+      frame.removeAttribute("src");
+      offline.classList.remove("hidden");
     } else {
+      if (stateEl) stateEl.textContent = "记忆服务未运行（引擎启动后自动加载）";
       frame.removeAttribute("src");
       offline.classList.remove("hidden");
     }
   } catch (e) { /* 保持占位 */ }
+}
+
+// iframe 加载事件：面板加载成功/失败给出可见反馈
+function bindMemoryFrameEvents() {
+  const frame = $("#memory-frame");
+  const stateEl = $("#mem-state");
+  if (!frame || frame.dataset.bound) return;
+  frame.dataset.bound = "1";
+  frame.addEventListener("load", () => {
+    if (stateEl) stateEl.textContent = "✅ 记忆面板已加载";
+    setTimeout(() => { if (stateEl) stateEl.textContent = ""; }, 6000);
+  });
+  frame.addEventListener("error", () => {
+    if (stateEl) stateEl.textContent = "⚠ 记忆面板加载失败（可点 ⧉ 用浏览器打开查看）";
+  });
 }
 
 // 记忆面板高度自适应：

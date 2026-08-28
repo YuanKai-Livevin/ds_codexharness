@@ -74,6 +74,7 @@
           <div id="memory-frame-wrap" class="memory-frame-wrap">
             <iframe id="memory-frame" title="记忆面板（记忆块管理 · 阶段总结 · 压缩交接）"></iframe>
           </div>
+          <div id="mem-state" class="mem-state"></div>
           <div id="mem-offline" class="mem-offline hidden">
             <span>记忆服务未运行</span>
             <button id="btn-mem-retry" class="btn btn-small">重试</button>
@@ -310,15 +311,6 @@ description: 一句话描述技能用途
   </div>
 
   <div id="toast" class="toast hidden"></div>
-
-  <!-- 持续思考过程面板（模型推理实时追加，可收起） -->
-  <div id="reason-panel" class="reason-panel hidden">
-    <div class="reason-panel-head">
-      <span id="reason-panel-title">🧠 思考过程</span>
-      <button id="reason-panel-close" class="reason-panel-btn" title="收起">—</button>
-    </div>
-    <div id="reason-panel-body" class="reason-panel-body"></div>
-  </div>
   <script src="core.js"></script>
   <script src="engine.js"></script>
   <script src="chat.js"></script>

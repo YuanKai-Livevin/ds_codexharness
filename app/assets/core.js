@@ -168,8 +168,5 @@ function clearMessages() {
   state.approvalQueue = [];
   state.pendingApproval = null;
   if (typeof resetPlan === "function") resetPlan();
-  // 新会话/清空时收起思考面板
-  const rp = $("#reason-panel");
-  if (rp) rp.classList.add("hidden");
   updateChatEmptyBg();
 }
