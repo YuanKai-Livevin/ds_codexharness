@@ -87,6 +87,12 @@ pub(crate) async fn memory_api(
     if !(path.starts_with("/memory/") || path.starts_with("/api/memory/")) {
         return Err("非法路径（仅允许 /memory/*）".to_string());
     }
+    // 后端路由挂在 /api/memory/* 下，统一补 /api 前缀
+    let req_path = if path.starts_with("/api/") {
+        path.clone()
+    } else {
+        format!("/api{}", path)
+    };
     let port = *state.memory_port.lock().await;
     let port = port.ok_or_else(|| "记忆服务未运行".to_string())?;
     let token = session_token(&state).await?;
@@ -102,7 +108,7 @@ pub(crate) async fn memory_api(
     let req = format!(
         "{} {} HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nAuthorization: Bearer {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
         method,
-        path,
+        req_path,
         port,
         token,
         body.len(),
