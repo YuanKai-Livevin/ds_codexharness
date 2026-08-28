@@ -8,6 +8,13 @@ async function init() {
   document.querySelectorAll(".audit-filter").forEach((b) => {
     b.addEventListener("click", () => setAuditFilter(b.dataset.cat));
   });
+  // R9 任务与产出物
+  $("#btn-tasks").addEventListener("click", openTasks);
+  $("#btn-tasks-close").addEventListener("click", () => $("#modal-tasks").classList.add("hidden"));
+  $("#btn-tasks-refresh").addEventListener("click", loadTasks);
+  document.querySelectorAll(".task-filter").forEach((b) => {
+    b.addEventListener("click", () => setTaskFilter(b.dataset.st));
+  });
   $("#btn-settings-cancel").addEventListener("click", () => $("#modal-settings").classList.add("hidden"));
   $("#btn-settings-save").addEventListener("click", saveSettings);
   $("#btn-onboard-go").addEventListener("click", () => {

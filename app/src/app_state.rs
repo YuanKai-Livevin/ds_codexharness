@@ -46,6 +46,8 @@ pub(crate) struct TaskCtx {
     pub(crate) model: String,
     pub(crate) workspace: String,
     pub(crate) gateway: Option<String>,
+    /// 任务所属会话（thread_id，用于 R9 产出物/Diff）
+    pub(crate) thread_id: Option<String>,
     /// 本任务内发生的文件变更摘要（产出物）
     pub(crate) files: Vec<String>,
 }

@@ -7,4 +7,5 @@ pub mod office;
 pub mod sessions;
 pub mod settings;
 pub mod skills;
+pub mod tasks;
 pub mod workspace;

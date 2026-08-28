@@ -4,4 +4,4 @@ pub mod approvals;
 pub mod client;
 pub mod events;
 
-pub use client::{CodexError, CodexServer, HistoryMessage, ThreadInfo};
+pub use client::{CodexError, CodexServer, HistoryMessage, ThreadFileChange, ThreadInfo};

@@ -423,6 +423,8 @@ body {
 .chip-on { background: rgba(61,153,112,.12); color: var(--ok); }
 .chip-err { background: rgba(196,92,38,.14); color: var(--danger); }
 .chip-warn { background: rgba(184,134,11,.12); color: var(--warn); }
+.chip-ok { background: rgba(61,153,112,.12); color: var(--ok); }
+.chip-run { background: rgba(196,92,38,.1); color: #c05c2a; }
 
 /* 弹窗 */
 .modal-mask { position: fixed; inset: 0; background: rgba(15,23,42,.35); display: flex; align-items: center; justify-content: center; z-index: 50; }
@@ -451,6 +453,7 @@ body {
 /* 左下角浮动设置按钮 */
 .fab-settings { position: fixed; left: 18px; bottom: 18px; z-index: 60; width: 42px; height: 42px; border-radius: 50%; background: var(--bg-layer-1); border: 1px solid var(--border-l2); box-shadow: 0 4px 14px rgba(15,23,42,.12); display: flex; align-items: center; justify-content: center; color: var(--label-secondary); cursor: pointer; transition: all .15s; }
 .fab-audit { bottom: 68px; }
+.fab-tasks { bottom: 118px; }
 .fab-settings svg { width: 20px; height: 20px; }
 .fab-settings:hover { color: var(--brand-500); border-color: var(--brand-500); transform: translateY(-1px); }
 
@@ -475,6 +478,31 @@ body {
 .cat-approval .audit-event { color: #b8860b; }
 .audit-accept { display: flex; gap: 8px; margin-top: 6px; }
 .audit-accepted { margin-top: 6px; font-size: 12px; color: var(--brand-600, #3d9970); }
+
+/* 任务与产出物（R9） */
+.task-card { border: 1px solid var(--border-l1); border-radius: 10px; padding: 8px 12px; margin: 6px 2px; background: var(--bg-layer-1); }
+.task-card-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.task-time { margin-left: auto; font-size: 11.5px; color: var(--label-dimmed); font-family: var(--mono); }
+.task-err { font-size: 12px; color: #c2401a; }
+.task-goal { font-size: 13.5px; color: var(--label-primary); line-height: 1.45; word-break: break-all; }
+.task-meta { font-size: 11.5px; color: var(--label-dimmed); margin-top: 2px; }
+.task-btns { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.task-artifacts { margin-top: 8px; border-top: 1px dashed var(--border-l2); padding-top: 8px; }
+.artifact-card { border: 1px solid var(--border-l1); border-radius: 8px; padding: 6px 10px; margin: 4px 0; background: var(--code-bg-l2); }
+.artifact-head { display: flex; align-items: center; gap: 8px; }
+.artifact-icon { font-size: 14px; }
+.artifact-name { font-weight: 600; font-size: 12.5px; color: var(--label-primary); word-break: break-all; }
+.artifact-diff { margin-top: 6px; }
+.diff-view { font-family: var(--mono); font-size: 11.5px; border: 1px solid var(--border-l1); border-radius: 8px; overflow: hidden; max-height: 300px; overflow-y: auto; }
+.diff-line { display: flex; gap: 8px; padding: 1px 8px; white-space: pre-wrap; word-break: break-all; }
+.diff-num { flex: 0 0 28px; text-align: right; color: var(--label-dimmed); user-select: none; }
+.diff-ctx { background: transparent; color: var(--label-secondary); }
+.diff-add { background: rgba(61,153,112,.12); color: #2c7a54; }
+.diff-del { background: rgba(196,64,26,.1); color: #b0431f; }
+.diff-grid { display: flex; gap: 8px; }
+.diff-col { flex: 1; min-width: 0; }
+.diff-col-title { font-size: 11.5px; color: var(--label-dimmed); margin-bottom: 2px; }
+.diff-pre { background: var(--code-bg); border-radius: 6px; padding: 6px 8px; font-family: var(--mono); font-size: 11px; white-space: pre-wrap; max-height: 260px; overflow-y: auto; }
 
 /* ============ 内嵌记忆面板（工作区文件下方） ============ */
 .memory-panel-card { display: flex; flex-direction: column; gap: 8px; }

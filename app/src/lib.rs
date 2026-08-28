@@ -14,6 +14,7 @@ use commands::{
     sessions::{list_sessions, current_session, new_session, switch_session, delete_session, session_history, list_tmp, cleanup_tmp},
     settings::{get_settings, save_settings, save_api_key, has_api_key, get_api_key_masked, test_connection, get_status},
     skills::{get_skills_repo, open_skills_repo, import_skills},
+    tasks::task_artifacts,
     workspace::{remove_workspace, common_folders, open_workspace, pick_folder, list_dir, list_workspace_files, open_path},
 };
 use oh_core::config::AppSettings;
@@ -90,6 +91,7 @@ pub fn run() {
             audit_list,
             audit_accept,
             audit_export,
+            task_artifacts,
         ])
         .setup(|app| {
             // 启动时自动拉起引擎（若已配置 API Key 或内网免密钥）

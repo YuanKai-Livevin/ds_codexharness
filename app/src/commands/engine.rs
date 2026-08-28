@@ -207,12 +207,12 @@ async fn start_engine_inner_impl(
             match &ev {
                 EngineEvent::TurnStarted { turn_id } => {
                     let task_id = turn_id.clone();
-                    let (goal, gateway) = {
+                    let (goal, gateway, thread_id) = {
                         let mut ct = st.current_task.lock().await;
                         match ct.as_mut() {
                             Some(ctx) => {
                                 ctx.task_id = Some(task_id.clone());
-                                (ctx.goal.clone(), ctx.gateway.clone())
+                                (ctx.goal.clone(), ctx.gateway.clone(), ctx.thread_id.clone())
                             }
                             None => {
                                 // 兜底：无 send_message 上下文（极少见）
@@ -223,9 +223,10 @@ async fn start_engine_inner_impl(
                                     model: audit_model.clone(),
                                     workspace: String::new(),
                                     gateway: audit_gateway.clone(),
+                                    thread_id: None,
                                     files: Vec::new(),
                                 });
-                                (String::new(), audit_gateway.clone())
+                                (String::new(), audit_gateway.clone(), None)
                             }
                         }
                     };
@@ -238,6 +239,7 @@ async fn start_engine_inner_impl(
                             "model": audit_model,
                             "workspace": audit_workspace_or(&st).await,
                             "gateway": gateway,
+                            "thread_id": thread_id,
                         }),
                     );
                 }
@@ -481,12 +483,13 @@ pub(crate) async fn send_message(state: State<'_, AppState>, text: String) -> Re
     let server = guard
         .as_mut()
         .ok_or_else(|| "引擎未启动，请先启动引擎。".to_string())?;
-    // R6 审计：记录任务上下文（目标/模型/工作区/网关），turn_id 在 TurnStarted 时落定
+    // R6 审计：记录任务上下文（目标/模型/工作区/网关/会话），turn_id 在 TurnStarted 时落定
     {
         let gateway = {
             let p = *state.gateway_port.lock().await;
             p.map(|p| format!("127.0.0.1:{}", p))
         };
+        let thread_id = server.current_thread_id().await;
         let mut ct = state.current_task.lock().await;
         *ct = Some(TaskCtx {
             task_id: None,
@@ -495,6 +498,7 @@ pub(crate) async fn send_message(state: State<'_, AppState>, text: String) -> Re
             model: s.model.clone(),
             workspace: ws.to_string_lossy().to_string(),
             gateway,
+            thread_id,
             files: Vec::new(),
         });
     }

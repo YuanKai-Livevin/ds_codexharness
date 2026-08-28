@@ -61,6 +61,15 @@ pub struct HistoryMessage {
     pub status: String,
 }
 
+/// 轮次内的文件变更（R9 产出物/Diff）：含修改前后内容。
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ThreadFileChange {
+    pub path: String,
+    pub change_type: String,
+    pub old: String,
+    pub new: String,
+}
+
 pub struct CodexServer {
     child: Option<Child>,
     out_tx: mpsc::UnboundedSender<String>,
@@ -441,6 +450,17 @@ impl CodexServer {
         Ok(parse_thread_history(&res))
     }
 
+    /// 读取指定轮次的文件变更（含修改前后内容，用于 R9 产出物/Diff）。
+    pub async fn read_thread_file_changes(
+        &mut self,
+        thread_id: &str,
+        turn_id: &str,
+    ) -> Result<Vec<ThreadFileChange>, CodexError> {
+        let params = json!({ "threadId": thread_id, "includeTurns": true });
+        let res = self.request("thread/read", params).await?;
+        Ok(parse_thread_file_changes(&res, turn_id))
+    }
+
     /// 注册额外的 SKILLS 仓库根（codex skills/extraRoots/set）。
     pub async fn register_skills_roots(&mut self, roots: &[String]) -> Result<(), CodexError> {
         let params = json!({ "extraRoots": roots });
@@ -644,6 +664,61 @@ pub(crate) fn parse_thread_history(res: &serde_json::Value) -> Vec<HistoryMessag
     out
 }
 
+/// 解析 thread/read 响应中指定轮次的文件变更（含 old/new 内容）。
+pub(crate) fn parse_thread_file_changes(res: &serde_json::Value, turn_id: &str) -> Vec<ThreadFileChange> {
+    let mut out = Vec::new();
+    if let Some(turns) = res.pointer("/thread/turns").and_then(|t| t.as_array()) {
+        for turn in turns {
+            let tid = turn
+                .get("id")
+                .and_then(|v| v.as_str())
+                .unwrap_or("");
+            // 只处理目标轮次；turn_id 为空时处理所有轮次
+            if !turn_id.is_empty() && !tid.is_empty() && tid != turn_id {
+                continue;
+            }
+            if let Some(items) = turn.get("items").and_then(|i| i.as_array()) {
+                for item in items {
+                    if item.get("type").and_then(|v| v.as_str()) != Some("fileChange") {
+                        continue;
+                    }
+                    if let Some(changes) = item.get("changes").and_then(|c| c.as_array()) {
+                        for ch in changes {
+                            let path = ch
+                                .get("file_name")
+                                .or_else(|| ch.get("filePath"))
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string();
+                            if path.trim().is_empty() {
+                                continue;
+                            }
+                            let ct = ch
+                                .get("change_type")
+                                .or_else(|| ch.get("changeType"))
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string();
+                            let old = ch.get("old").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                            let new = ch.get("new").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                            out.push(ThreadFileChange { path, change_type: ct, old, new });
+                        }
+                    } else if let Some(summary) = item.get("summary").and_then(|v| v.as_str()) {
+                        // 无结构化 changes 时兜底：整条摘要作为一条记录
+                        out.push(ThreadFileChange {
+                            path: summary.to_string(),
+                            change_type: String::new(),
+                            old: String::new(),
+                            new: String::new(),
+                        });
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -722,5 +797,47 @@ mod tests {
         });
         let h = parse_thread_history(&res);
         assert_eq!(h.len(), 0);
+    }
+
+    #[test]
+    fn parse_file_changes_per_turn() {
+        let res = json!({
+            "thread": {
+                "turns": [
+                    {
+                        "id": "turn-1",
+                        "items": [
+                            {
+                                "type": "fileChange",
+                                "changes": [
+                                    { "file_name": "report.md", "change_type": "created", "old": "", "new": "# 报告" },
+                                    { "file_name": "notes.txt", "change_type": "modified", "old": "旧内容", "new": "新内容" }
+                                ]
+                            }
+                        ]
+                    },
+                    {
+                        "id": "turn-2",
+                        "items": [
+                            { "type": "fileChange", "summary": "updated 2 files" }
+                        ]
+                    }
+                ]
+            }
+        });
+        // 只取 turn-1：结构化 old/new
+        let fc = parse_thread_file_changes(&res, "turn-1");
+        assert_eq!(fc.len(), 2);
+        assert_eq!(fc[0].path, "report.md");
+        assert_eq!(fc[0].change_type, "created");
+        assert_eq!(fc[0].new, "# 报告");
+        assert_eq!(fc[1].old, "旧内容");
+        // turn-2 是 summary 兜底
+        let fc2 = parse_thread_file_changes(&res, "turn-2");
+        assert_eq!(fc2.len(), 1);
+        assert!(fc2[0].path.contains("2 files"));
+        // 空 turn_id：全部
+        let fc3 = parse_thread_file_changes(&res, "");
+        assert_eq!(fc3.len(), 3);
     }
 }

@@ -125,7 +125,10 @@
     </div>
   </div>
 
-  <!-- 左下角浮动按钮：审计日志 + 设置（仅图标） -->
+  <!-- 左下角浮动按钮：任务/产出物 + 审计 + 设置（仅图标） -->
+  <button id="btn-tasks" class="fab-settings fab-tasks" title="任务与产出物（任务卡 · 产出文件 · Diff）">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="17" rx="2"/><path d="M3 9h18"/><path d="M8 13h8M8 17h5"/></svg>
+  </button>
   <button id="btn-audit" class="fab-settings fab-audit" title="审计日志（任务/工具/审批/错误）">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>
   </button>
@@ -281,6 +284,26 @@ description: 一句话描述技能用途
     </div>
   </div>
 
+  <!-- 任务与产出物弹窗（R9） -->
+  <div id="modal-tasks" class="modal-mask hidden">
+    <div class="modal modal-wide">
+      <h2>📋 任务与产出物 <span id="tasks-count" class="hint"></span></h2>
+      <p class="hint">每个任务 = 一轮对话。查看目标、状态、产出文件、修改前后 Diff；聊天区仍是主对话入口。</p>
+      <div class="audit-filters">
+        <button class="btn btn-small task-filter active" data-st="all">全部</button>
+        <button class="btn btn-small task-filter" data-st="running">进行中</button>
+        <button class="btn btn-small task-filter" data-st="completed">已完成</button>
+        <button class="btn btn-small task-filter" data-st="failed">失败/中断</button>
+        <span class="audit-spacer"></span>
+        <button id="btn-tasks-refresh" class="btn btn-small">⟳ 刷新</button>
+      </div>
+      <div id="tasks-list" class="audit-list"><div class="fs-empty">加载中…</div></div>
+      <div class="modal-actions">
+        <button id="btn-tasks-close" class="btn btn-ghost">关闭</button>
+      </div>
+    </div>
+  </div>
+
   <div id="toast" class="toast hidden"></div>
   <script src="core.js"></script>
   <script src="engine.js"></script>
@@ -291,6 +314,7 @@ description: 一句话描述技能用途
   <script src="settings.js"></script>
   <script src="memory.js"></script>
   <script src="audit.js"></script>
+  <script src="tasks.js"></script>
   <script src="boot.js"></script>
 </body>
 </html>
