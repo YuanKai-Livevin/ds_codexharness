@@ -39,7 +39,11 @@ pub fn run() {
             engine_pid: Mutex::new(None),
             engine_running: AtomicBool::new(false),
             engine_state: Mutex::new(app_state::EngineState::Stopped),
+            gateway_pid: Mutex::new(None),
+            gateway_port: Mutex::new(None),
             memory_pid: Mutex::new(None),
+            memory_port: Mutex::new(None),
+            session_token: Mutex::new(None),
         })
         .invoke_handler(tauri::generate_handler![
             get_settings,
@@ -130,7 +134,7 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app, event| {
-            // 退出时强制终止引擎与记忆面板子进程，避免孤儿进程
+            // 退出时强制终止引擎与全部 sidecar 子进程，避免孤儿进程
             if let RunEvent::Exit = event {
                 let state = app.state::<AppState>();
                 let lock = state.engine_pid.try_lock();
@@ -147,14 +151,7 @@ pub fn run() {
                     }
                     let _ = cmd.args(["/PID", &pid.to_string(), "/F", "/T"]).output();
                 }
-                let mlock = state.memory_pid.try_lock();
-                let mpid = match mlock {
-                    Ok(g) => *g,
-                    Err(_) => None,
-                };
-                if let Some(pid) = mpid {
-                    oh_core::winproc::kill_tree(pid);
-                }
+                services::memory_sidecar::stop_all_sync(&state);
             }
         });
 }

@@ -1,8 +1,10 @@
 /* HARNESS 记忆面板 —— 交互逻辑（原生 JS，无框架） */
 "use strict";
 
-// 由记忆服务托管时用相对路径；file:// 直开时用绝对地址
+// 由记忆服务托管时用相对路径；file:// 直开时用绝对地址（演示模式）
 const API_BASE = location.protocol === "file:" ? "http://127.0.0.1:8765/api" : "/api";
+// 本地会话令牌：主应用以 ?token= 注入 iframe URL（R2 鉴权）
+const TOKEN = new URLSearchParams(location.search).get("token") || "";
 const SKELETON_DELAY = 2000;   // API 响应超 2 秒显示骨架屏
 const POLL_MS = 30000;         // 水位轮询
 
@@ -56,8 +58,10 @@ function toast(msg, type) {
 
 /* ================= API（不可用时自动降级 Mock） ================= */
 async function api(path, opts) {
+  const headers = { "Content-Type": "application/json" };
+  if (TOKEN) headers["Authorization"] = "Bearer " + TOKEN;  // R2 本地令牌鉴权
   const res = await fetch(API_BASE + path, {
-    headers: { "Content-Type": "application/json" },
+    headers,
     ...opts,
   });
   if (!res.ok) throw new Error("HTTP " + res.status);

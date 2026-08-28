@@ -1,6 +1,36 @@
 //! Windows DPAPI 加解密：用于在本机安全保存 API Key（仅当前用户/本机可解密）。
+//! 附带：加密级随机数（BCryptGenRandom），用于本地 sidecar 会话令牌。
 
 use base64::{engine::general_purpose::STANDARD as B64, Engine};
+
+/// 生成加密级随机十六进制字符串（用于本地网关/记忆服务的会话令牌）。
+pub fn random_hex(byte_len: usize) -> Option<String> {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::Security::Cryptography::{
+            BCryptGenRandom, BCRYPT_USE_SYSTEM_PREFERRED_RNG,
+        };
+        let mut buf = vec![0u8; byte_len];
+        let status = unsafe {
+            BCryptGenRandom(
+                std::ptr::null_mut(),
+                buf.as_mut_ptr(),
+                buf.len() as u32,
+                BCRYPT_USE_SYSTEM_PREFERRED_RNG,
+            )
+        };
+        if status != 0 {
+            return None;
+        }
+        let hex: String = buf.iter().map(|b| format!("{:02x}", b)).collect();
+        Some(hex)
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = byte_len;
+        None
+    }
+}
 
 /// 使用 Windows DPAPI 加密（用户作用域）。
 pub fn encrypt(plain: &str) -> Result<String, String> {

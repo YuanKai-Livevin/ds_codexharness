@@ -1,8 +1,9 @@
 //! 引擎生命周期与消息命令：启动/停止/发送/审批/中断/沙箱。
 
-use crate::app_state::{data_root, AppState, EngineState, MEMORY_PORT};
+use crate::app_state::{data_root, AppState, EngineState};
 use crate::services::memory_sidecar::{
-    memory_block_dir, parse_input_tokens, spawn_memory_server, write_conversation_tokens,
+    memory_block_dir, parse_input_tokens, session_token, spawn_gateway, spawn_memory_server,
+    stop_gateway, write_conversation_tokens,
 };
 use oh_core::codex::CodexServer;
 use oh_core::model::EngineEvent;
@@ -88,24 +89,14 @@ async fn start_engine_inner_impl(
     let ws = workspace::ensure_workspace(&settings.workspace_path)?;
     let ws_str = ws.to_string_lossy().to_string();
 
-    // 准备 CODEX_HOME（config.toml + 审批规则）
-    CodexServer::prepare_home(&state.codex_home, &settings)?;
-
-    // 确保 SKILLS 仓库目录存在
-    let skills_repo = data_root().join("skills");
-    std::fs::create_dir_all(&skills_repo).map_err(|e| format!("无法创建技能仓库: {}", e))?;
-    let skills_repo_str = skills_repo.to_string_lossy().to_string();
-
-    // 拉起记忆面板后端（记忆块管理 + 真实上下文水位 + 可选翻译层）
-    // 普通模式：失败不阻塞引擎；开启翻译层（use_bridge）时引擎依赖本地 /responses 服务，
-    // 必须 fail-closed —— 服务起不来就拒绝启动，避免请求发往错误/失效进程（T0-03）。
-    match spawn_memory_server(app, state, &bundled, &ws, &key).await {
-        Ok(pid) => {
+    // 1) 先拉起记忆服务（面板，独立进程/随机端口/令牌），失败不阻塞引擎
+    match spawn_memory_server(state, &bundled, &ws, &key).await {
+        Ok(port) => {
             let _ = app.emit(
                 "oh-event",
                 EngineEvent::Log {
                     level: "info".into(),
-                    msg: format!("记忆面板服务已启动（127.0.0.1:{}，pid {}）", MEMORY_PORT, pid),
+                    msg: format!("记忆服务已启动（127.0.0.1:{}）", port),
                 },
             );
         }
@@ -114,19 +105,51 @@ async fn start_engine_inner_impl(
                 "oh-event",
                 EngineEvent::Log {
                     level: "warn".into(),
-                    msg: format!("记忆面板服务启动失败：{}", e),
+                    msg: format!("记忆服务启动失败：{}", e),
                 },
             );
-            if settings.use_bridge {
+        }
+    }
+
+    // 2) 开启翻译层时拉起独立模型网关（随引擎生命周期），失败 fail-closed
+    let mut gateway_port: Option<u16> = None;
+    if settings.use_bridge {
+        match spawn_gateway(state, &bundled, &ws, &key).await {
+            Ok(port) => {
+                gateway_port = Some(port);
+                let _ = app.emit(
+                    "oh-event",
+                    EngineEvent::Log {
+                        level: "info".into(),
+                        msg: format!("模型网关已启动（127.0.0.1:{}）", port),
+                    },
+                );
+            }
+            Err(e) => {
                 return Err(format!(
-                    "已开启「内置翻译层」，但本地翻译服务启动失败（{}）。已停止启动引擎，避免请求发往不可用服务。请检查端口 8765 是否被占用后重试。",
+                    "已开启「内置翻译层」，但本地模型网关启动失败（{}）。已停止启动引擎，避免请求发往不可用服务。",
                     e
                 ));
             }
         }
     }
 
-    let mut server = CodexServer::spawn(&bundled, &state.codex_home, &settings, &key)
+    // 3) 准备 CODEX_HOME（config.toml + 审批规则），桥接模式 base_url 指向网关
+    CodexServer::prepare_home(&state.codex_home, &settings, gateway_port)?;
+
+    // 确保 SKILLS 仓库目录存在
+    let skills_repo = data_root().join("skills");
+    std::fs::create_dir_all(&skills_repo).map_err(|e| format!("无法创建技能仓库: {}", e))?;
+    let skills_repo_str = skills_repo.to_string_lossy().to_string();
+
+    // 4) 桥接模式下，引擎的 API Key = 本地网关会话令牌（网关据此鉴权）
+    let engine_key = if settings.use_bridge {
+        session_token(state).await?
+    } else {
+        key.clone()
+    };
+
+    let mut server = CodexServer::spawn(&bundled, &state.codex_home, &settings, &engine_key)
         .await
         .map_err(|e| format!("启动引擎失败: {}", e))?;
 
@@ -227,6 +250,8 @@ pub(crate) async fn start_engine(
 #[tauri::command]
 pub(crate) async fn stop_engine(state: State<'_, AppState>) -> Result<(), String> {
     *state.engine_state.lock().await = EngineState::Stopping;
+    // 停止模型网关（随引擎生命周期；记忆服务保持运行，供面板继续使用）
+    stop_gateway(&state).await;
     let mut guard = state.engine.lock().await;
     if let Some(server) = guard.as_mut() {
         server.stop().await;

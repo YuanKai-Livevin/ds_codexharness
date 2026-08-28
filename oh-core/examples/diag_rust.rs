@@ -1,4 +1,4 @@
-//! Rust 驱动全链路诊断：真实 key + 真实工作区，打印收到的所有事件。
+﻿//! Rust 驱动全链路诊断：真实 key + 真实工作区，打印收到的所有事件。
 //! 运行: cargo run --example diag_rust -p oh-core
 use oh_core::codex::CodexServer;
 use oh_core::config::AppSettings;
@@ -30,7 +30,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let home = std::env::temp_dir().join(format!("oh-diag-{}", std::process::id()));
     std::fs::create_dir_all(&home).ok();
-    CodexServer::prepare_home(&home, &settings)?;
+    CodexServer::prepare_home(&home, &settings, None)?;
 
     let bundled = Bundled::new(None);
     let mut server = CodexServer::spawn(&bundled, &home, &settings, &key).await?;

@@ -66,8 +66,8 @@ pub struct CodexServer {
 
 impl CodexServer {
     /// 生成 CODEX_HOME 下的 config.toml 与审批规则（实现见 provider 模块）。
-    pub fn prepare_home(codex_home: &Path, settings: &AppSettings) -> Result<(), String> {
-        crate::provider::prepare_home(codex_home, settings)
+    pub fn prepare_home(codex_home: &Path, settings: &AppSettings, bridge_port: Option<u16>) -> Result<(), String> {
+        crate::provider::prepare_home(codex_home, settings, bridge_port)
     }
 
     /// 启动 app-server 子进程（stdio 传输）。

@@ -98,7 +98,8 @@ async function init() {
   $("#btn-mem-open").addEventListener("click", openMemoryPanel);
   $("#btn-mem-retry").addEventListener("click", setupMemoryCard);
   window.addEventListener("message", (ev) => {
-    if (ev.origin !== MEMORY_ORIGIN) return;
+    // 仅接受来自当前记忆服务来源（动态端口）的消息
+    if (memoryOrigin && ev.origin !== memoryOrigin) return;
     const d = ev.data || {};
     if (d.type === "memory:phase-confirmed") {
       toast("阶段已归档" + (d.openNewThread ? "，正在开启新阶段对话…" : ""), "ok");

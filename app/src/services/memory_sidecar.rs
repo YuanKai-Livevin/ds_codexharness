@@ -1,6 +1,10 @@
-//! 记忆面板 sidecar 服务：部署、拉起、停止与水位写入。
+//! 本地 sidecar 服务（R2）：模型网关 + 记忆服务。
+//! - 独立进程、随机端口、每次启动生成会话令牌（BCryptGenRandom）
+//! - 拉起后带令牌做 health 握手，未就绪视为启动失败（fail closed）
+//! - 网关随引擎生命周期启停；记忆服务随应用生命周期
 
-use crate::app_state::{AppState, MEMORY_PORT};
+use crate::app_state::AppState;
+use oh_core::dpapi;
 use oh_core::python::Bundled;
 use std::path::Path;
 use std::path::PathBuf;
@@ -64,79 +68,212 @@ fn copy_memory_dir(src: &Path, dst: &Path) -> std::io::Result<()> {
     Ok(())
 }
 
-/// 拉起（或重启）记忆面板后端：python -m uvicorn backend.api.main:app --port 8765
-pub(crate) async fn spawn_memory_server(
-    _app: &AppHandle,
-    state: &State<'_, AppState>,
-    bundled: &Bundled,
-    ws: &Path,
-    key: &str,
-) -> Result<u32, String> {
-    stop_memory_server(state).await;
-    if !bundled.python_available() {
-        return Err("未找到内置 Python 运行时。".to_string());
+/// 取一个空闲随机端口（绑定 0 后释放）。
+fn pick_free_port() -> Result<u16, String> {
+    let l = std::net::TcpListener::bind(("127.0.0.1", 0)).map_err(|e| format!("获取空闲端口失败: {}", e))?;
+    let port = l.local_addr().map_err(|e| e.to_string())?.port();
+    drop(l);
+    Ok(port)
+}
+
+/// 会话令牌：首次生成（加密级随机数），此后复用。
+pub(crate) async fn session_token(state: &State<'_, AppState>) -> Result<String, String> {
+    let mut guard = state.session_token.lock().await;
+    if let Some(t) = guard.as_ref() {
+        return Ok(t.clone());
     }
-    let block = ensure_memory_block(bundled, ws)?;
-    let data_dir = block.join("data");
+    let t = dpapi::random_hex(24).ok_or_else(|| "生成会话令牌失败".to_string())?;
+    *guard = Some(t.clone());
+    Ok(t)
+}
+
+/// 用原始 TCP 发最小 HTTP GET 探测 /api/health（带令牌）。
+fn probe_health(port: u16, token: &str) -> bool {
+    use std::io::{Read, Write};
+    use std::net::TcpStream;
+    use std::time::Duration;
+    if let Ok(mut s) = TcpStream::connect(("127.0.0.1", port)) {
+        let _ = s.set_read_timeout(Some(Duration::from_secs(2)));
+        let req = format!(
+            "GET /api/health HTTP/1.1\r\nHost: 127.0.0.1:{}\r\nAuthorization: Bearer {}\r\nConnection: close\r\n\r\n",
+            port, token
+        );
+        if s.write_all(req.as_bytes()).is_ok() {
+            let mut buf = [0u8; 512];
+            if let Ok(n) = s.read(&mut buf) {
+                let resp = String::from_utf8_lossy(&buf[..n]);
+                return resp.starts_with("HTTP/1.1 200") || resp.starts_with("HTTP/1.0 200");
+            }
+        }
+    }
+    false
+}
+
+/// 带令牌的 health 握手（最多 10 秒）。
+async fn wait_ready(port: u16, token: &str) -> bool {
+    for _ in 0..20 {
+        if probe_health(port, token) {
+            return true;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
+    false
+}
+
+fn spawn_uvicorn(
+    bundled: &Bundled,
+    block: &Path,
+    port: u16,
+    module: &str,
+    envs: &[(&str, &str)],
+    log_path: &Path,
+) -> Result<u32, String> {
     let py = bundled.python_exe();
-    let settings = state.settings.lock().await.clone();
-    let base_url = settings.base_url.clone();
-    let model = settings.model.clone();
-    let use_bridge = settings.use_bridge;
     let mut cmd = std::process::Command::new(&py);
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW，避免黑窗
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
     }
     cmd.args([
-        "-m", "uvicorn",
-        "backend.api.main:app",
+        "-m", "uvicorn", module,
         "--host", "127.0.0.1",
-        "--port", &MEMORY_PORT.to_string(),
+        "--port", &port.to_string(),
     ])
-    .current_dir(&block)
-    .env("HARNESS_DATA_DIR", &data_dir)
-    .env("HARNESS_WORKSPACE", ws)
-    .env("TIKTOKEN_CACHE_DIR", block.join("backend").join("services").join("encodings"))
-    .env("HARNESS_BASE_URL", &base_url)
-    .env("HARNESS_MODEL", &model);
-    // 内置翻译层：引擎指向本地 /responses，翻译到真实上游 /chat/completions
-    if use_bridge {
-        cmd.env("HARNESS_BRIDGE", "1")
-            .env("HARNESS_UPSTREAM_URL", &base_url)
-            .env("HARNESS_UPSTREAM_MODEL", &model);
+    .current_dir(block);
+    for (k, v) in envs {
+        cmd.env(k, v);
     }
-    if !key.is_empty() {
-        cmd.env("OH_API_KEY", key);
+    if let Some(parent) = log_path.parent() {
+        let _ = std::fs::create_dir_all(parent);
     }
-    let log_path = data_dir.join("memory-server.log");
     let log = std::fs::OpenOptions::new()
         .create(true)
         .append(true)
-        .open(&log_path)
-        .map_err(|e| format!("无法打开记忆服务日志 {}: {}", log_path.display(), e))?;
+        .open(log_path)
+        .map_err(|e| format!("无法打开日志 {}: {}", log_path.display(), e))?;
     cmd.stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::from(log));
-    let child = cmd.spawn().map_err(|e| format!("启动记忆面板服务失败: {}", e))?;
-    let pid = child.id();
-    *state.memory_pid.lock().await = Some(pid);
-    Ok(pid)
+    let child = cmd.spawn().map_err(|e| format!("启动 sidecar 失败: {}", e))?;
+    Ok(child.id())
 }
 
-/// 停止记忆面板后端（进程树）。
+/// 拉起模型网关（/responses 翻译，随引擎生命周期）。
+pub(crate) async fn spawn_gateway(
+    state: &State<'_, AppState>,
+    bundled: &Bundled,
+    ws: &Path,
+    key: &str,
+) -> Result<u16, String> {
+    stop_gateway(state).await;
+    let block = ensure_memory_block(bundled, ws)?;
+    if !bundled.python_available() {
+        return Err("未找到内置 Python 运行时。".to_string());
+    }
+    let token = session_token(state).await?;
+    let port = pick_free_port()?;
+    let settings = state.settings.lock().await.clone();
+    let base_url = settings.base_url.clone();
+    let model = settings.model.clone();
+    let log_path = block.join("data").join("gateway.log");
+    let pid = spawn_uvicorn(
+        bundled,
+        &block,
+        port,
+        "backend.gateway.main:app",
+        &[
+            ("HARNESS_BRIDGE", "1"),
+            ("HARNESS_TOKEN", &token),
+            ("HARNESS_UPSTREAM_URL", &base_url),
+            ("HARNESS_UPSTREAM_MODEL", &model),
+            ("HARNESS_BASE_URL", &base_url),
+            ("HARNESS_MODEL", &model),
+            ("OH_API_KEY", key),
+        ],
+        &log_path,
+    )?;
+    if !wait_ready(port, &token).await {
+        let _ = stop_gateway(state).await;
+        return Err(format!("模型网关启动后健康检查未通过（端口 {}）", port));
+    }
+    *state.gateway_pid.lock().await = Some(pid);
+    *state.gateway_port.lock().await = Some(port);
+    Ok(port)
+}
+
+/// 停止模型网关（进程树）。
+pub(crate) async fn stop_gateway(state: &State<'_, AppState>) {
+    let pid = *state.gateway_pid.lock().await;
+    if let Some(p) = pid {
+        oh_core::winproc::kill_tree(p);
+    }
+    *state.gateway_pid.lock().await = None;
+    *state.gateway_port.lock().await = None;
+}
+
+/// 拉起记忆服务（面板 + 记忆 API，随应用生命周期）。
+pub(crate) async fn spawn_memory_server(
+    state: &State<'_, AppState>,
+    bundled: &Bundled,
+    ws: &Path,
+    key: &str,
+) -> Result<u16, String> {
+    stop_memory_server(state).await;
+    let block = ensure_memory_block(bundled, ws)?;
+    let data_dir = block.join("data");
+    if !bundled.python_available() {
+        return Err("未找到内置 Python 运行时。".to_string());
+    }
+    let token = session_token(state).await?;
+    let port = pick_free_port()?;
+    let settings = state.settings.lock().await.clone();
+    let log_path = data_dir.join("memory-server.log");
+    let pid = spawn_uvicorn(
+        bundled,
+        &block,
+        port,
+        "backend.api.main:app",
+        &[
+            ("HARNESS_TOKEN", &token),
+            ("HARNESS_DATA_DIR", &data_dir.to_string_lossy()),
+            ("HARNESS_WORKSPACE", &ws.to_string_lossy()),
+            ("TIKTOKEN_CACHE_DIR", &block.join("backend").join("services").join("encodings").to_string_lossy()),
+            ("HARNESS_BASE_URL", &settings.base_url),
+            ("HARNESS_MODEL", &settings.model),
+            ("OH_API_KEY", key),
+        ],
+        &log_path,
+    )?;
+    if !wait_ready(port, &token).await {
+        let _ = stop_memory_server(state).await;
+        return Err(format!("记忆服务启动后健康检查未通过（端口 {}）", port));
+    }
+    *state.memory_pid.lock().await = Some(pid);
+    *state.memory_port.lock().await = Some(port);
+    Ok(port)
+}
+
+/// 停止记忆服务（进程树）。
 pub(crate) async fn stop_memory_server(state: &State<'_, AppState>) {
     let pid = *state.memory_pid.lock().await;
     if let Some(p) = pid {
         oh_core::winproc::kill_tree(p);
     }
     *state.memory_pid.lock().await = None;
+    *state.memory_port.lock().await = None;
 }
 
-/// 停止记忆面板后端（退出钩子用，非 async 上下文）。
-pub(crate) fn stop_memory_server_sync(pid: Option<u32>) {
-    if let Some(p) = pid {
-        oh_core::winproc::kill_tree(p);
+/// 退出钩子：统一停止全部 sidecar。
+pub(crate) fn stop_all_sync(state: &AppState) {
+    if let Ok(g) = state.memory_pid.try_lock() {
+        if let Some(p) = *g {
+            oh_core::winproc::kill_tree(p);
+        }
+    }
+    if let Ok(g) = state.gateway_pid.try_lock() {
+        if let Some(p) = *g {
+            oh_core::winproc::kill_tree(p);
+        }
     }
 }
 

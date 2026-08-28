@@ -46,7 +46,12 @@ pub(crate) struct AppState {
     pub(crate) engine_pid: Mutex<Option<u32>>,
     pub(crate) engine_running: AtomicBool,
     pub(crate) engine_state: Mutex<EngineState>,
+    // 本地 sidecar（R2）：模型网关 + 记忆服务，独立进程/随机端口/会话令牌
+    pub(crate) gateway_pid: Mutex<Option<u32>>,
+    pub(crate) gateway_port: Mutex<Option<u16>>,
     pub(crate) memory_pid: Mutex<Option<u32>>,
+    pub(crate) memory_port: Mutex<Option<u16>>,
+    pub(crate) session_token: Mutex<Option<String>>,
 }
 
 /// 应用数据根目录：所有应用级配置/数据集中在一个目录便于管理。

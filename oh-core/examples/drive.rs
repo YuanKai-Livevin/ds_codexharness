@@ -1,4 +1,4 @@
-//! 端到端驱动测试：启动真实 app-server → initialize → thread/start → turn/start → 事件流。
+﻿//! 端到端驱动测试：启动真实 app-server → initialize → thread/start → turn/start → 事件流。
 //! 运行: cargo run --example drive (在项目根目录，需 OH_DEV_ROOT 或位于项目根运行)
 use oh_core::codex::CodexServer;
 use oh_core::config::AppSettings;
@@ -35,7 +35,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     println!("== prepare_home ==");
-    CodexServer::prepare_home(&home, &settings)?;
+    CodexServer::prepare_home(&home, &settings, None)?;
 
     let bundled = Bundled::new(None);
     println!("codex: {}", bundled.codex_exe().display());

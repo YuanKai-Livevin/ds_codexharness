@@ -11,7 +11,9 @@ async function openMemoryPanel() {
 }
 
 // ---------- 内嵌记忆面板（侧栏 iframe + 真实水位条 + 阶段联动） ----------
-const MEMORY_ORIGIN = "http://127.0.0.1:8765";
+// R2：动态端口 + 会话令牌（来自 memory_status），不再硬编码 8765
+let memoryOrigin = "http://127.0.0.1:8765";   // 默认值；启动后由 memory_status 刷新
+let memoryToken = "";
 
 async function setupMemoryCard() {
   const frame = $("#memory-frame");
@@ -19,9 +21,12 @@ async function setupMemoryCard() {
   if (!frame) return;
   try {
     const st = await invoke("memory_status").catch(() => null);
-    if (st && st.running) {
-      if (!frame.src || frame.src.indexOf(MEMORY_ORIGIN) === -1) {
-        frame.src = MEMORY_ORIGIN + "/";
+    if (st && st.running && st.port) {
+      memoryOrigin = "http://127.0.0.1:" + st.port;
+      memoryToken = st.token || "";
+      const src = memoryOrigin + "/?token=" + encodeURIComponent(memoryToken);
+      if (frame.src !== src) {
+        frame.src = src;
       }
       offline.classList.add("hidden");
       refreshMemoryCount();
@@ -51,9 +56,15 @@ function updateMemoryFrameHeight() {
 }
 
 async function refreshMemoryCount() {
+  if (!memoryOrigin) return;
   try {
-    const r = await fetch(MEMORY_ORIGIN + "/api/memory/blocks", { timeout: 3000 }).catch(() => null);
-    if (!r) return;
+    const headers = {};
+    if (memoryToken) headers["Authorization"] = "Bearer " + memoryToken;
+    const ctl = new AbortController();
+    const timer = setTimeout(() => ctl.abort(), 3000);
+    const r = await fetch(memoryOrigin + "/api/memory/blocks", { headers, signal: ctl.signal }).catch(() => null);
+    clearTimeout(timer);
+    if (!r || !r.ok) return;
     const d = await r.json().catch(() => null);
     if (d && Array.isArray(d.blocks)) {
       state.memoryCount = d.blocks.length;

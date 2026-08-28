@@ -2,10 +2,13 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8" />
-<meta http-equiv="refresh" content="0; url=sidebar.html" />
 <title>HARNESS 记忆面板</title>
+<script>
+  // 跳转到面板，并保留查询参数（?token= 令牌）
+  location.replace("sidebar.html" + location.search + location.hash);
+</script>
 </head>
 <body>
-<p style="font-family:sans-serif;padding:12px">正在打开记忆面板… <a href="sidebar.html">点击此处</a></p>
+<p style="font-family:sans-serif;padding:12px">正在打开记忆面板…</p>
 </body>
 </html>
