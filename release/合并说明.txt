@@ -1,12 +1,12 @@
 # JONHON Harness v0.3.0 分卷包说明
 
-由于 GitHub 单文件上限 100MB，最终安装包（OfficeHarness-v0.3.zip，279.7MB）
+由于 GitHub 单文件上限 100MB，最终安装包（OfficeHarness-v0.3.zip，280.1MB）
 被拆分为以下分卷（均为 Git 文件，可正常下载）：
 
     OfficeHarness-v0.3.zip.001  (90.0 MB)
     OfficeHarness-v0.3.zip.002  (90.0 MB)
     OfficeHarness-v0.3.zip.003  (90.0 MB)
-    OfficeHarness-v0.3.zip.004  ( 9.7 MB)
+    OfficeHarness-v0.3.zip.004  (10.1 MB)
 
 ## 合并方法
 
@@ -21,5 +21,6 @@
 
 ## 说明
 
-- 分卷来自 `dist\OfficeHarness-v0.3.zip`（源码构建产物，解压后整体使用：exe + runtime + codex-bin + memory-block 需保持同目录）。
-- 完整源码见仓库根目录；构建方法见 README.md。
+- 分卷来自 `dist\OfficeHarness-v0.3.zip`（源码构建产物，解压后整体使用：exe + runtime + codex-bin + memory-block + office-tools 需保持同目录）。
+- 包含 T0 安全加固、R3 模块化、R1 状态机、R2 双 sidecar 架构、R5 SQLite 记忆、R4 能力自检、R7 会话/任务恢复、R6 结构化审计、R9 任务与产出物界面、R10 确定性办公工具层、R8 SKILLS 治理。
+- 完整源码见仓库根目录；构建方法见 scripts/build.ps1。
