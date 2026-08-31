@@ -36,17 +36,21 @@ TOOLS = {
     "excel_merge": (excel_tools.excel_merge, {
         "inputs": ["array"], "output": "string", "mode": "string(optional: vertical)",
         "sheet": "string(optional)", "header_rows": "int(optional, default 1)",
+        "overwrite": "bool(optional, 默认 false；true 需先征得用户同意，覆盖自动备份)",
     }),
     "excel_dedupe": (excel_tools.excel_dedupe, {
         "input": "string", "output": "string", "key_columns": "array(列名或序号, 可选, 默认全列)",
+        "overwrite": "bool(optional, 默认 false；true 需先征得用户同意，覆盖自动备份)",
     }),
     "excel_filter": (excel_tools.excel_filter, {
         "input": "string", "output": "string", "column": "string(列名或序号)",
         "op": "string: eq|ne|gt|ge|lt|le|contains", "value": "any",
+        "overwrite": "bool(optional, 默认 false；true 需先征得用户同意，覆盖自动备份)",
     }),
     "excel_pivot": (excel_tools.excel_pivot, {
         "input": "string", "output": "string", "rows": "array(分组列)",
         "values": "string(数值列)", "agg": "string: sum|count|avg(默认 sum)",
+        "overwrite": "bool(optional, 默认 false；true 需先征得用户同意，覆盖自动备份)",
     }),
     "excel_formula_check": (excel_tools.excel_formula_check, {
         "input": "string",
@@ -54,33 +58,40 @@ TOOLS = {
     # Word
     "word_fill_template": (word_fill_template, {
         "input": "string(docx 模板)", "output": "string", "values": "object({{占位符}}→值)",
+        "overwrite": "bool(optional, 默认 false；true 需先征得用户同意，覆盖自动备份)",
     }),
     "word_extract_text": (word_extract_text, {
         "input": "string(docx)", "output_txt": "string(可选，缺省仅输出统计)",
+        "overwrite": "bool(optional)",
     }),
     # PDF
-    "pdf_merge": (pdf_merge, {"inputs": ["array"], "output": "string"}),
+    "pdf_merge": (pdf_merge, {"inputs": ["array"], "output": "string",
+                              "overwrite": "bool(optional, 默认 false；true 需先征得用户同意，覆盖自动备份)"}),
     "pdf_split": (pdf_split, {
         "input": "string", "output_dir": "string", "ranges": "array(如 [[1,3],[5,5]], 1 基含端点, 可选)",
         "pages": "array(如 [1,3,5], 可选)",
+        "overwrite": "bool(optional, 默认 false；true 需先征得用户同意，覆盖自动备份)",
     }),
     "pdf_text": (pdf_text, {
         "input": "string", "output_txt": "string(可选)", "first_page": "int(可选, 1 基)",
-        "last_page": "int(可选)",
+        "last_page": "int(可选)", "overwrite": "bool(optional)",
     }),
     # 图片
     "img_resize": (img_resize, {
         "inputs": ["array(文件或目录, 可选, 默认当前工作区图片)"], "output_dir": "string",
         "width": "int(可选)", "height": "int(可选)", "percent": "number(可选, 如 0.5)",
+        "overwrite": "bool(optional, 默认 false；true 需先征得用户同意，覆盖自动备份)",
     }),
     "img_convert": (img_convert, {
         "inputs": ["array(可选, 默认当前工作区图片)"], "output_dir": "string",
         "format": "string: png|jpg|webp",
+        "overwrite": "bool(optional, 默认 false；true 需先征得用户同意，覆盖自动备份)",
     }),
     # 文件
     "file_manifest": (file_manifest, {
         "input_dir": "string(可选, 默认工作区)", "output_csv": "string(可选)",
         "include_hash": "bool(可选, 默认 true)", "pattern": "string(可选, 文件名包含)",
+        "overwrite": "bool(optional)",
     }),
     "file_rename": (file_rename, {
         "input_dir": "string", "mapping": "array([{from,to},...], 相对路径)", "dry_run": "bool(可选)",

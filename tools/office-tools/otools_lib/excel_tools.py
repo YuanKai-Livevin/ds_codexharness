@@ -5,7 +5,10 @@ import os
 
 import openpyxl
 
-from .common import ToolError, cell_value, ensure_dir, list_paths, out, require, resolve, validate_output
+from .common import (
+    ToolError, cell_value, ensure_dir, list_paths, out, require, resolve, safe_write,
+    validate_output,
+)
 
 
 def _load_rows(path, sheet=None):
@@ -35,8 +38,15 @@ def _write_rows(path, headers, rows):
     wb.close()
 
 
+def _write_rows_guard(root, out_path, headers, rows, overwrite):
+    """T0-04 安全写入：临时文件 → 校验 → 原子替换（覆盖自动备份）。"""
+    def wf(tmp):
+        _write_rows(tmp, headers, rows)
+    return safe_write(root, out_path, "xlsx", overwrite, wf)
+
+
 def excel_merge(params, root, dry_run=False):
-    p = require(["inputs", "output"], params, ["mode", "sheet", "header_rows"])
+    p = require(["inputs", "output"], params, ["mode", "sheet", "header_rows", "overwrite"])
     inputs = list_paths(root, p["inputs"], exts={".xlsx", ".xls", ".csv"})
     if not inputs:
         raise ToolError("EMPTY_INPUT", "没有可合并的文件")
@@ -65,15 +75,17 @@ def excel_merge(params, root, dry_run=False):
         all_rows.extend(data)
     if not all_rows:
         raise ToolError("EMPTY_INPUT", "合并后无数据行")
-    ensure_dir(os.path.dirname(out_path) or root)
-    _write_rows(out_path, headers or [], all_rows)
-    validate_output(out_path, "xlsx")
+    overwrite = bool(p.get("overwrite", False))
+    info = _write_rows_guard(root, out_path, headers or [], all_rows, overwrite)
     return out(True, f"合并完成：{len(inputs)} 个文件共 {len(all_rows)} 行 → {out_path}",
-               outputs=[out_path], extra={"files": len(inputs), "rows": len(all_rows)})
+               outputs=[out_path],
+               extra={"files": len(inputs), "rows": len(all_rows),
+                      "overwrite": overwrite, "old_hash": info["old_hash"],
+                      "new_hash": info["new_hash"], "backup": info["backup"]})
 
 
 def excel_dedupe(params, root, dry_run=False):
-    p = require(["input", "output"], params, ["key_columns"])
+    p = require(["input", "output"], params, ["key_columns", "overwrite"])
     src = resolve(root, p["input"])
     if not os.path.isfile(src):
         raise ToolError("FILE_NOT_FOUND", f"输入文件不存在: {p['input']}")
@@ -107,15 +119,17 @@ def excel_dedupe(params, root, dry_run=False):
     if dry_run:
         return out(True, f"预演：去重将保留 {len(kept)} 行，删除 {dropped} 行重复",
                    extra={"rows_before": len(data), "rows_after": len(kept), "dropped": dropped})
-    ensure_dir(os.path.dirname(out_path) or root)
-    _write_rows(out_path, headers, kept)
-    validate_output(out_path, "xlsx")
+    overwrite = bool(p.get("overwrite", False))
+    info = _write_rows_guard(root, out_path, headers, kept, overwrite)
     return out(True, f"去重完成：{len(data)} → {len(kept)} 行（删除 {dropped} 行）→ {out_path}",
-               outputs=[out_path], extra={"rows_before": len(data), "rows_after": len(kept), "dropped": dropped})
+               outputs=[out_path],
+               extra={"rows_before": len(data), "rows_after": len(kept), "dropped": dropped,
+                      "overwrite": overwrite, "old_hash": info["old_hash"],
+                      "new_hash": info["new_hash"], "backup": info["backup"]})
 
 
 def excel_filter(params, root, dry_run=False):
-    p = require(["input", "output", "column", "op", "value"], params)
+    p = require(["input", "output", "column", "op", "value"], params, ["overwrite"])
     src = resolve(root, p["input"])
     if not os.path.isfile(src):
         raise ToolError("FILE_NOT_FOUND", f"输入文件不存在: {p['input']}")
@@ -169,15 +183,17 @@ def excel_filter(params, root, dry_run=False):
     if dry_run:
         return out(True, f"预演：筛选后 {len(kept)}/{len(rows) - 1} 行",
                    extra={"rows_before": len(rows) - 1, "rows_after": len(kept)})
-    ensure_dir(os.path.dirname(out_path) or root)
-    _write_rows(out_path, headers, kept)
-    validate_output(out_path, "xlsx")
+    overwrite = bool(p.get("overwrite", False))
+    info = _write_rows_guard(root, out_path, headers, kept, overwrite)
     return out(True, f"筛选完成：{len(rows) - 1} → {len(kept)} 行（{col} {op} {want}）→ {out_path}",
-               outputs=[out_path], extra={"rows_before": len(rows) - 1, "rows_after": len(kept)})
+               outputs=[out_path],
+               extra={"rows_before": len(rows) - 1, "rows_after": len(kept),
+                      "overwrite": overwrite, "old_hash": info["old_hash"],
+                      "new_hash": info["new_hash"], "backup": info["backup"]})
 
 
 def excel_pivot(params, root, dry_run=False):
-    p = require(["input", "output", "rows", "values"], params, ["agg"])
+    p = require(["input", "output", "rows", "values"], params, ["agg", "overwrite"])
     src = resolve(root, p["input"])
     if not os.path.isfile(src):
         raise ToolError("FILE_NOT_FOUND", f"输入文件不存在: {p['input']}")
@@ -225,11 +241,13 @@ def excel_pivot(params, root, dry_run=False):
     if dry_run:
         return out(True, f"预演：透视将产生 {len(out_rows)} 个分组",
                    extra={"groups": len(out_rows)})
-    ensure_dir(os.path.dirname(out_path) or root)
-    _write_rows(out_path, head, out_rows)
-    validate_output(out_path, "xlsx")
+    overwrite = bool(p.get("overwrite", False))
+    info = _write_rows_guard(root, out_path, head, out_rows, overwrite)
     return out(True, f"透视完成：{len(out_rows)} 个分组（{agg} {p['values']}）→ {out_path}",
-               outputs=[out_path], extra={"groups": len(out_rows)})
+               outputs=[out_path],
+               extra={"groups": len(out_rows),
+                      "overwrite": overwrite, "old_hash": info["old_hash"],
+                      "new_hash": info["new_hash"], "backup": info["backup"]})
 
 
 def excel_formula_check(params, root, dry_run=False):

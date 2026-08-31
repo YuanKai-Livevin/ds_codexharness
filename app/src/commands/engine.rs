@@ -427,15 +427,27 @@ async fn audit_workspace_or(st: &State<'_, AppState>) -> String {
     s.workspace_path
 }
 
-/// 种子内置 office-tools 技能到技能仓库（缺失才复制，保留用户修改）。
+/// 种子内置 office-tools 技能到技能仓库：缺失或与内置版本内容不同时刷新（内置技能随版本升级）。
 fn seed_office_tools_skill(bundled: &Bundled, skills_repo: &std::path::Path) {
     let src = bundled.office_tools_dir();
     if !src.join("SKILL.md").exists() || !src.join("otools.py").exists() {
         return;
     }
     let dst = skills_repo.join("office-tools");
-    if dst.join("SKILL.md").exists() {
-        return; // 已存在，不覆盖
+    let need_update = if !dst.join("SKILL.md").exists() {
+        true
+    } else {
+        // 内置技能与部署副本内容不同 → 刷新（内置技能随版本升级，用户误改会被版本覆盖）
+        match (std::fs::read(src.join("SKILL.md")), std::fs::read(dst.join("SKILL.md"))) {
+            (Ok(a), Ok(b)) => a != b,
+            _ => true,
+        }
+    };
+    if !need_update {
+        return;
+    }
+    if dst.exists() {
+        let _ = std::fs::remove_dir_all(&dst);
     }
     if let Err(e) = copy_dir_recursive(&src, &dst) {
         eprintln!("seed office-tools skill failed: {}", e);

@@ -123,3 +123,98 @@ def cell_value(v):
     if isinstance(v, (str, int, float, bool)):
         return v
     return str(v)
+
+
+# ================= T0-04 安全写入事务 =================
+# 原则：默认不覆盖；覆盖必须先征得用户同意（overwrite=true）并自动备份；
+#       先写临时文件 → 校验 → 原子替换；记录 old/new hash 供审计。
+
+import hashlib
+import shutil
+import time as _time
+
+
+def sha256_file(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(65536), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def backup_dir_for(root):
+    """工作区内的覆盖备份目录（不占目标目录、不污染业务文件）。"""
+    d = os.path.join(root, ".oh_tmp", "office-backups")
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
+def _tmp_for(out_path):
+    """临时文件保留原扩展名（openpyxl/PIL/pypdf 按扩展名识别格式）。"""
+    base, ext = os.path.splitext(out_path)
+    return "%s.oh-tmp-%d-%d%s" % (base, os.getpid(), _time.time_ns() % 1000000, ext)
+
+
+def prepare_output(out_path, overwrite):
+    """目标存在且未批准覆盖 → CONFLICT；否则返回可安全写入的临时路径。"""
+    if os.path.exists(out_path):
+        if not overwrite:
+            raise ToolError(
+                "CONFLICT",
+                f"输出文件已存在，默认不覆盖: {out_path}（如需覆盖，请先征得用户同意后传 overwrite: true）",
+            )
+    return _tmp_for(out_path)
+
+
+def commit_output(tmp_path, out_path, overwrite, backup_dir=None):
+    """原子提交：覆盖时先备份旧文件；返回 {backup, old_hash, new_hash}。"""
+    info = {"backup": None, "old_hash": None, "new_hash": sha256_file(tmp_path)}
+    if os.path.exists(out_path):
+        info["old_hash"] = sha256_file(out_path)
+        if not overwrite:
+            os.remove(tmp_path)
+            raise ToolError(
+                "CONFLICT",
+                f"输出文件已存在，默认不覆盖: {out_path}（如需覆盖，请先征得用户同意后传 overwrite: true）",
+            )
+        if backup_dir:
+            os.makedirs(backup_dir, exist_ok=True)
+            ts = _time.strftime("%Y%m%d-%H%M%S")
+            bpath = os.path.join(backup_dir, "%s-%s" % (ts, os.path.basename(out_path)))
+            shutil.copy2(out_path, bpath)
+            info["backup"] = bpath
+        os.replace(tmp_path, out_path)
+    else:
+        os.replace(tmp_path, out_path)
+    return info
+
+
+def check_conflicts(paths, overwrite):
+    """批量输出预检：任一目标已存在且未批准覆盖 → 整体 CONFLICT（不写任何文件）。"""
+    existing = [p for p in paths if os.path.exists(p)]
+    if existing and not overwrite:
+        names = ", ".join(os.path.basename(p) for p in existing[:5])
+        more = f"（共 {len(existing)} 个）" if len(existing) > 5 else ""
+        raise ToolError(
+            "CONFLICT",
+            f"输出文件已存在，默认不覆盖: {names}{more}（如需覆盖，请先征得用户同意后传 overwrite: true）",
+        )
+
+
+def safe_write(root, out_path, kind, overwrite, write_fn):
+    """统一安全写入：临时文件 → 校验 → 原子替换（覆盖自动备份）。
+    write_fn(tmp_path) 负责把内容写到临时路径。返回提交信息。"""
+    out_path = resolve(root, out_path) if not os.path.isabs(out_path) else os.path.abspath(out_path)
+    tmp = prepare_output(out_path, overwrite)
+    try:
+        write_fn(tmp)
+        validate_output(tmp, kind)
+        info = commit_output(tmp, out_path, overwrite, backup_dir_for(root))
+        return info
+    except Exception:
+        if os.path.exists(tmp):
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+        raise
