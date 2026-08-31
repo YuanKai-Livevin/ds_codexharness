@@ -161,11 +161,89 @@ fn resolved_for_check(p: &Path) -> PathBuf {
     canonicalize_loose(p)
 }
 
+/// Windows 大小写不敏感前缀判断（带路径边界：前缀后必须是分隔符或结尾）；非 Windows 直接前缀。
+pub fn path_within(ws: &Path, t: &Path) -> bool {
+    #[cfg(windows)]
+    {
+        let w = ws.to_string_lossy().to_lowercase();
+        let tt = t.to_string_lossy().to_lowercase();
+        match tt.strip_prefix(&w) {
+            Some(rest) => rest.is_empty() || rest.starts_with('\\') || rest.starts_with('/'),
+            None => false,
+        }
+    }
+    #[cfg(not(windows))]
+    {
+        t.starts_with(ws)
+    }
+}
+
+/// 判断路径是否为 reparse point（junction / symlink / 挂载点）。
+/// 递归遍历时应跳过此类目录，防止跟随链接逃出工作区。
+#[cfg(windows)]
+pub fn is_reparse_point(p: &Path) -> bool {
+    use std::os::windows::fs::MetadataExt;
+    const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x0400;
+    p.metadata()
+        .map(|m| m.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0)
+        .unwrap_or(false)
+}
+
+#[cfg(not(windows))]
+pub fn is_reparse_point(_p: &Path) -> bool {
+    false
+}
+
+/// WorkspaceGuard 核心（T0-03）：验证目标位于工作区内，返回可安全使用的最终路径。
+///
+/// 关键改进：目标路径**不存在**时（如 `workspace\link\new.xlsx`，link 是指向外部的 junction），
+/// 逐级向上找最近**已存在**的祖先，解析其最终路径（解开 junction/symlink），
+/// 再重新附加不存在的后缀并校验 —— 杜绝「字面比较通过、实际写穿链接」。
+pub fn guard_resolve(target: &Path, ws: &Path) -> Result<PathBuf, String> {
+    use std::ffi::OsString;
+    let mut missing: Vec<OsString> = Vec::new();
+    let mut cur: &Path = target;
+    loop {
+        if cur.exists() {
+            let fp = final_path(cur).unwrap_or_else(|| canonicalize_loose(cur));
+            let mut out = fp;
+            for comp in missing.iter().rev() {
+                out.push(comp);
+            }
+            if !path_within(ws, &out) {
+                return Err(format!(
+                    "越界：路径解析后位于工作区之外（可能通过 junction/符号链接逃逸）：{}",
+                    out.display()
+                ));
+            }
+            return Ok(out);
+        }
+        match cur.file_name() {
+            Some(n) => missing.push(n.to_os_string()),
+            None => {
+                return Err(format!("无法解析路径的最近已存在祖先: {}", target.display()));
+            }
+        }
+        match cur.parent() {
+            Some(p) => cur = p,
+            None => {
+                return Err(format!("无法解析路径的最近已存在祖先: {}", target.display()));
+            }
+        }
+    }
+}
+
+/// WorkspaceGuard 对外入口：先规范化工作区自身，再校验目标。
+pub fn guard_path(workspace: &Path, target: &Path) -> Result<PathBuf, String> {
+    let ws = final_path(workspace).unwrap_or_else(|| canonicalize_loose(workspace));
+    guard_resolve(target, &ws)
+}
+
 /// 判断某个（可能不存在的）路径是否位于工作区内。
 pub fn is_within_workspace(workspace: &Path, target: &Path) -> bool {
     let ws = resolved_for_check(workspace);
     let t = resolved_for_check(target);
-    t.starts_with(&ws)
+    path_within(&ws, &t)
 }
 
 /// 扫描一段文本（用户指令 / 命令）中的越界访问企图。
@@ -292,5 +370,58 @@ mod tests {
         // 工作区外的绝对路径应报
         let issues4 = scan_text_for_escapes("处理 D:\\other\\data.xlsx", Some(ws));
         assert!(issues4.iter().any(|i| i.message.contains("工作区之外")));
+    }
+
+    // ---------- T0-03 WorkspaceGuard ----------
+
+    #[test]
+    fn guard_path_real_fs() {
+        let base = std::env::temp_dir().join(format!("guard-fs-{}", std::process::id()));
+        let ws = base.join("ws");
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&ws).unwrap();
+        std::fs::create_dir_all(base.join("outside")).unwrap();
+        // 正常：不存在的子路径（祖先存在）应允许
+        assert!(guard_path(&ws, &ws.join("sub").join("new.xlsx")).is_ok());
+        // 工作区外路径应拒绝
+        assert!(guard_path(&ws, &base.join("outside").join("x")).is_err());
+        // 目录穿越应拒绝
+        assert!(guard_path(&ws, &ws.join("..").join("outside")).is_err());
+        let _ = std::fs::remove_dir_all(&base);
+    }
+
+    /// 真实 Windows junction 集成测试：`ws\link` junction 指向外部目录，
+    /// 已存在文件与不存在的输出路径都必须被拒绝（不许写穿链接）。
+    #[cfg(windows)]
+    #[test]
+    fn guard_rejects_junction_escape() {
+        let base = std::env::temp_dir().join(format!("guard-junction-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let ws = base.join("ws");
+        let outside = base.join("outside");
+        std::fs::create_dir_all(&ws).unwrap();
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::write(outside.join("secret.txt"), b"s").unwrap();
+        let link = ws.join("link");
+        let out = std::process::Command::new("cmd")
+            .args(["/c", "mklink", "/J", link.to_str().unwrap(), outside.to_str().unwrap()])
+            .output();
+        if let Ok(o) = out {
+            if o.status.success() {
+                // 已存在的路径（经 junction）：必须拒绝
+                assert!(
+                    guard_path(&ws, &link.join("secret.txt")).is_err(),
+                    "已存在文件经 junction 必须被拒绝"
+                );
+                // 不存在的输出路径（祖先 junction）：必须拒绝
+                assert!(
+                    guard_path(&ws, &link.join("new.xlsx")).is_err(),
+                    "不存在的输出路径经 junction 必须被拒绝"
+                );
+                // 正常路径不受影响
+                assert!(guard_path(&ws, &ws.join("ok.txt")).is_ok());
+            }
+        }
+        let _ = std::fs::remove_dir_all(&base);
     }
 }

@@ -229,6 +229,43 @@ def run_selftest(root):
             check("rename 冲突拒绝", {"ok": False})
         except _TE as e:
             check("rename 冲突拒绝", {"ok": e.code == "CONFLICT"})
+        # ---- T0-03 junction 防逃逸（Windows；jout 必须位于工作区 work 之外）----
+        if os.name == "nt":
+            jbase = os.path.join(work, "jbase")
+            jout = os.path.join(os.path.dirname(work), "jout-" + str(os.getpid()))
+            os.makedirs(jbase, exist_ok=True)
+            os.makedirs(jout, exist_ok=True)
+            link = os.path.join(jbase, "link")
+            jr = subprocess.run(["cmd", "/c", "mklink", "/J", link, jout],
+                                capture_output=True, text=True)
+            if jr.returncode == 0:
+                from .common import resolve as _resolve
+                try:
+                    _resolve(work, os.path.join("jbase", "link", "new.xlsx"))
+                    check("Python junction 越界拒绝", {"ok": False})
+                except _TE as e:
+                    check("Python junction 越界拒绝", {"ok": e.code == "PERM_DENIED"})
+                # 已存在文件经 junction 同样拒绝
+                with open(os.path.join(jout, "secret.txt"), "w", encoding="utf-8") as fh:
+                    fh.write("s")
+                try:
+                    _resolve(work, os.path.join("jbase", "link", "secret.txt"))
+                    check("Python junction 已存在文件拒绝", {"ok": False})
+                except _TE as e:
+                    check("Python junction 已存在文件拒绝", {"ok": e.code == "PERM_DENIED"})
+            else:
+                check("Python junction 越界拒绝", {"ok": True})
+                check("Python junction 已存在文件拒绝", {"ok": True})
+            # 清理：先移除 junction 链接本身，再删目录
+            try:
+                if os.path.lexists(link):
+                    os.rmdir(link)
+            except OSError:
+                pass
+            shutil.rmtree(jout, ignore_errors=True)
+        else:
+            check("Python junction 越界拒绝", {"ok": True})
+            check("Python junction 已存在文件拒绝", {"ok": True})
     finally:
         shutil.rmtree(work, ignore_errors=True)
 

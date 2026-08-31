@@ -99,21 +99,24 @@ pub(crate) async fn pick_folder() -> Result<Option<String>, String> {
     }
 }
 
-/// 列出工作区内目录（严格限制在工作区范围）。
+/// 列出工作区内目录（严格限制在工作区范围；解析 junction 防逃逸）。
 #[tauri::command]
 pub(crate) async fn list_dir(state: State<'_, AppState>, path: String) -> Result<Vec<FileEntry>, String> {
     let s = state.settings.lock().await.clone();
     let ws = workspace::ensure_workspace(&s.workspace_path)?;
-    let target = std::path::Path::new(&path);
-    if !workspace::is_within_workspace(&ws, target) {
-        return Err("越界：仅允许浏览工作区目录内的文件。".to_string());
-    }
+    // T0-03：经 WorkspaceGuard 解析（最近的已存在祖先 + 最终路径），拒绝 junction 逃逸
+    let target = workspace::guard_path(&ws, std::path::Path::new(&path))
+        .map_err(|e| format!("越界：{}", e))?;
     if !target.is_dir() {
         return Err("指定路径不是目录。".to_string());
     }
     let mut out = Vec::new();
-    for entry in std::fs::read_dir(target).map_err(|e| e.to_string())? {
+    for entry in std::fs::read_dir(&target).map_err(|e| e.to_string())? {
         let Ok(e) = entry else { continue };
+        // 跳过 reparse point（junction/symlink），防止遍历进入外部
+        if workspace::is_reparse_point(&e.path()) {
+            continue;
+        }
         let md = e.metadata().ok();
         out.push(FileEntry {
             name: e.file_name().to_string_lossy().to_string(),
@@ -155,6 +158,10 @@ pub(crate) async fn list_workspace_files(state: State<'_, AppState>) -> Result<V
                 Ok(m) => m,
                 Err(_) => continue,
             };
+            // T0-03：跳过 reparse point（junction/symlink），防止 @ 引用遍历逃出工作区
+            if workspace::is_reparse_point(&entry.path()) {
+                continue;
+            }
             let name = entry.file_name().to_string_lossy().to_string();
             if md.is_dir() {
                 // 跳过隐藏目录与临时目录
@@ -185,10 +192,9 @@ pub(crate) async fn list_workspace_files(state: State<'_, AppState>) -> Result<V
 pub(crate) async fn open_path(state: State<'_, AppState>, path: String, reveal: bool) -> Result<(), String> {
     let s = state.settings.lock().await.clone();
     let ws = workspace::ensure_workspace(&s.workspace_path)?;
-    let target = std::path::Path::new(&path);
-    if !workspace::is_within_workspace(&ws, target) {
-        return Err("越界：仅允许操作工作区目录内的文件。".to_string());
-    }
+    // T0-03：经 WorkspaceGuard 解析最终路径（防 junction/symlink 逃逸）
+    let target = workspace::guard_path(&ws, std::path::Path::new(&path))
+        .map_err(|e| format!("越界：{}", e))?;
     if !target.exists() {
         return Err("文件不存在：".to_string() + &path);
     }

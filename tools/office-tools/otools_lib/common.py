@@ -36,20 +36,39 @@ def out(ok, message, outputs=None, warnings=None, error_code=None, extra=None):
     return d
 
 
+def _realpath_nearest(p):
+    """解析「最近已存在祖先」的最终路径（Windows 上解开 junction/symlink），
+    再重新附加不存在的后缀 —— 防止 workspace\\link\\new.xlsx 写穿链接逃出工作区。"""
+    suffix = []
+    cur = os.path.abspath(p)
+    while not os.path.exists(cur):
+        head, tail = os.path.split(cur)
+        if not tail or head == cur:
+            break
+        suffix.append(tail)
+        cur = head
+    base = os.path.realpath(cur)  # 已存在部分：解析 junction/symlink
+    for t in reversed(suffix):
+        base = os.path.join(base, t)
+    return base
+
+
 def resolve(root, p):
-    """路径解析：相对 root 或绝对路径均可，但必须落在 root 内（权限边界）。"""
+    """路径解析：相对 root 或绝对路径均可，但必须落在 root 内（权限边界）。
+    T0-03：对不存在的输出路径先解析最近已存在祖先的真实路径（防 junction 逃逸）。"""
     if not p or not str(p).strip():
         raise ToolError("SCHEMA_ERROR", "缺少路径参数")
     s = str(p).strip()
     a = os.path.abspath(s) if os.path.isabs(s) else os.path.abspath(os.path.join(root, s))
-    r = os.path.abspath(root)
+    r = os.path.realpath(os.path.abspath(root))
+    a_real = _realpath_nearest(a)
     try:
-        common = os.path.commonpath([r, a])
+        common = os.path.commonpath([r, a_real])
     except ValueError:
         common = ""
     if common != r:
-        raise ToolError("PERM_DENIED", f"路径越界（仅允许工作区内）: {p}")
-    return a
+        raise ToolError("PERM_DENIED", f"路径越界（含 junction/符号链接解析后仍须在工作区内）: {p}")
+    return a_real
 
 
 def require(keys, params, optional=()):
