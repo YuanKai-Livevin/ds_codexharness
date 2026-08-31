@@ -96,7 +96,7 @@ async function init() {
           if (s.replaced) t += "（已备份旧版）";
           return t;
         });
-        toast("已导入 " + imported.length + " 个技能：" + parts.join("；"));
+        toast("已导入 " + imported.length + " 个技能（已进入隔离区，点「启用」激活后模型才可用）：" + parts.join("；"));
       } else {
         toast("所选目录中未找到含 SKILL.md 的技能文件夹", "warn");
       }
