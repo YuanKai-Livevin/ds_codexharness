@@ -8,7 +8,7 @@ use oh_core::dpapi;
 use oh_core::python::Bundled;
 use std::path::Path;
 use std::path::PathBuf;
-use tauri::{AppHandle, State};
+use tauri::State;
 
 /// 记忆功能块在工作区内的目录：{工作区}/.harness-memory/
 pub(crate) fn memory_block_dir(ws: &Path) -> PathBuf {
@@ -35,8 +35,13 @@ pub(crate) fn ensure_memory_block(bundled: &Bundled, ws: &Path) -> Result<PathBu
             root.join("frontend")
         }
     };
-    if !src_backend.join("api").join("main.py").exists() || !src_frontend.join("sidebar.html").exists() {
-        return Err("未找到记忆面板代码（memory-block/backend 与 frontend），请检查程序目录是否完整。".to_string());
+    if !src_backend.join("api").join("main.py").exists()
+        || !src_frontend.join("sidebar.html").exists()
+    {
+        return Err(
+            "未找到记忆面板代码（memory-block/backend 与 frontend），请检查程序目录是否完整。"
+                .to_string(),
+        );
     }
     let block = memory_block_dir(ws);
     let dst_backend = block.join("backend");
@@ -70,7 +75,8 @@ fn copy_memory_dir(src: &Path, dst: &Path) -> std::io::Result<()> {
 
 /// 取一个空闲随机端口（绑定 0 后释放）。
 fn pick_free_port() -> Result<u16, String> {
-    let l = std::net::TcpListener::bind(("127.0.0.1", 0)).map_err(|e| format!("获取空闲端口失败: {}", e))?;
+    let l = std::net::TcpListener::bind(("127.0.0.1", 0))
+        .map_err(|e| format!("获取空闲端口失败: {}", e))?;
     let port = l.local_addr().map_err(|e| e.to_string())?.port();
     drop(l);
     Ok(port)
@@ -136,9 +142,13 @@ fn spawn_uvicorn(
         cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
     }
     cmd.args([
-        "-m", "uvicorn", module,
-        "--host", "127.0.0.1",
-        "--port", &port.to_string(),
+        "-m",
+        "uvicorn",
+        module,
+        "--host",
+        "127.0.0.1",
+        "--port",
+        &port.to_string(),
     ])
     .current_dir(block);
     for (k, v) in envs {
@@ -154,7 +164,9 @@ fn spawn_uvicorn(
         .map_err(|e| format!("无法打开日志 {}: {}", log_path.display(), e))?;
     cmd.stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::from(log));
-    let child = cmd.spawn().map_err(|e| format!("启动 sidecar 失败: {}", e))?;
+    let child = cmd
+        .spawn()
+        .map_err(|e| format!("启动 sidecar 失败: {}", e))?;
     Ok(child.id())
 }
 
@@ -238,7 +250,14 @@ pub(crate) async fn spawn_memory_server(
             ("HARNESS_TOKEN", &token),
             ("HARNESS_DATA_DIR", &data_dir.to_string_lossy()),
             ("HARNESS_WORKSPACE", &ws.to_string_lossy()),
-            ("TIKTOKEN_CACHE_DIR", &block.join("backend").join("services").join("encodings").to_string_lossy()),
+            (
+                "TIKTOKEN_CACHE_DIR",
+                &block
+                    .join("backend")
+                    .join("services")
+                    .join("encodings")
+                    .to_string_lossy(),
+            ),
             ("HARNESS_BASE_URL", &settings.base_url),
             ("HARNESS_MODEL", &settings.model),
             ("OH_API_KEY", key),
@@ -282,9 +301,10 @@ pub(crate) fn stop_all_sync(state: &AppState) {
 /// 从 codex turn/completed 的 usage JSON 中提取上下文 tokens（输入 tokens）。
 pub(crate) fn parse_input_tokens(usage: &str) -> Option<u64> {
     let v: serde_json::Value = serde_json::from_str(usage).ok()?;
-    v.get("input_tokens")
-        .and_then(|x| x.as_u64())
-        .or_else(|| v.pointer("/total_token_usage/input_tokens").and_then(|x| x.as_u64()))
+    v.get("input_tokens").and_then(|x| x.as_u64()).or_else(|| {
+        v.pointer("/total_token_usage/input_tokens")
+            .and_then(|x| x.as_u64())
+    })
 }
 
 /// 把 codex 每轮的真实上下文 tokens 写入记忆面板数据文件（水位监控数据源）。
@@ -306,7 +326,10 @@ pub(crate) async fn write_conversation_tokens(data_dir: &Path, tokens: u64) {
         let _ = tokio::fs::create_dir_all(parent).await;
     }
     let tmp = data_dir.join("conversation.json.tmp");
-    if tokio::fs::write(&tmp, serde_json::to_string(&payload).unwrap_or_default()).await.is_ok() {
+    if tokio::fs::write(&tmp, serde_json::to_string(&payload).unwrap_or_default())
+        .await
+        .is_ok()
+    {
         let _ = tokio::fs::rename(&tmp, &path).await;
     }
 }
@@ -321,7 +344,10 @@ pub(crate) async fn reset_memory_conversation(data_dir: &Path) {
     let path = data_dir.join("conversation.json");
     let _ = tokio::fs::create_dir_all(data_dir).await;
     let tmp = data_dir.join("conversation.json.tmp");
-    if tokio::fs::write(&tmp, serde_json::to_string(&payload).unwrap_or_default()).await.is_ok() {
+    if tokio::fs::write(&tmp, serde_json::to_string(&payload).unwrap_or_default())
+        .await
+        .is_ok()
+    {
         let _ = tokio::fs::rename(&tmp, &path).await;
     }
 }
@@ -335,7 +361,15 @@ fn chrono_like_now() -> String {
     let days = secs / 86400;
     let (y, m, d) = civil_from_days(days as i64);
     let rem = secs % 86400;
-    format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}", y, m, d, rem / 3600, (rem % 3600) / 60, rem % 60)
+    format!(
+        "{:04}-{:02}-{:02}T{:02}:{:02}:{:02}",
+        y,
+        m,
+        d,
+        rem / 3600,
+        (rem % 3600) / 60,
+        rem % 60
+    )
 }
 
 /// 天数 → (年,月,日)（civil_from_days 算法）。

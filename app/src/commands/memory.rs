@@ -3,7 +3,7 @@
 use crate::app_state::AppState;
 use crate::services::memory_sidecar::{memory_block_dir, session_token};
 use serde::Serialize;
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, State};
 
 /// 记忆面板状态（供前端显示服务可用性与 iframe 地址）。
 #[derive(Serialize, Clone)]
@@ -34,7 +34,11 @@ pub(crate) async fn memory_status(state: State<'_, AppState>) -> Result<MemorySt
     let deployed = block.join("frontend").join("sidebar.html").exists();
     let panel_url = match port {
         Some(p) if !token.is_empty() => format!("http://127.0.0.1:{}/?token={}", p, token),
-        _ => block.join("frontend").join("sidebar.html").to_string_lossy().to_string(),
+        _ => block
+            .join("frontend")
+            .join("sidebar.html")
+            .to_string_lossy()
+            .to_string(),
     };
     Ok(MemoryStatus {
         running,
@@ -49,7 +53,10 @@ pub(crate) async fn memory_status(state: State<'_, AppState>) -> Result<MemorySt
 
 /// 打开记忆面板（默认浏览器，带令牌 URL）。
 #[tauri::command]
-pub(crate) async fn open_memory_panel(state: State<'_, AppState>, app: AppHandle) -> Result<(), String> {
+pub(crate) async fn open_memory_panel(
+    state: State<'_, AppState>,
+    _app: AppHandle,
+) -> Result<(), String> {
     let st = memory_status(state).await?;
     if !st.running || st.panel_url.is_empty() {
         return Err("记忆服务未运行，无法打开面板。".to_string());
@@ -117,7 +124,8 @@ pub(crate) async fn memory_api(
     let mut s = std::net::TcpStream::connect(("127.0.0.1", port))
         .map_err(|e| format!("连接记忆服务失败: {}", e))?;
     let _ = s.set_read_timeout(Some(std::time::Duration::from_secs(20)));
-    s.write_all(req.as_bytes()).map_err(|e| format!("发送请求失败: {}", e))?;
+    s.write_all(req.as_bytes())
+        .map_err(|e| format!("发送请求失败: {}", e))?;
     let mut buf = Vec::new();
     let mut chunk = [0u8; 8192];
     loop {

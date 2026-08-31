@@ -8,14 +8,29 @@ mod services;
 use app_state::{migrate_legacy_data_root, AppState};
 use commands::{
     audit::{audit_accept, audit_export, audit_list},
-    engine::{start_engine, start_engine_inner, stop_engine, send_message, respond_approval, interrupt, setup_sandbox, sandbox_status},
-    memory::{memory_status, open_memory_panel, memory_api},
-    office::{libreoffice_status, open_in_libreoffice, convert_office},
-    sessions::{list_sessions, current_session, new_session, switch_session, delete_session, session_history, list_tmp, cleanup_tmp},
-    settings::{get_settings, save_settings, save_api_key, has_api_key, get_api_key_masked, test_connection, get_status},
-    skills::{get_skills_repo, open_skills_repo, import_skills, disable_skill, enable_skill, test_skill, rollback_skill},
+    engine::{
+        interrupt, respond_approval, sandbox_status, send_message, setup_sandbox, start_engine,
+        start_engine_inner, stop_engine,
+    },
+    memory::{memory_api, memory_status, open_memory_panel},
+    office::{convert_office, libreoffice_status, open_in_libreoffice},
+    sessions::{
+        cleanup_tmp, current_session, delete_session, list_sessions, list_tmp, new_session,
+        session_history, switch_session,
+    },
+    settings::{
+        get_api_key_masked, get_settings, get_status, has_api_key, save_api_key, save_settings,
+        test_connection,
+    },
+    skills::{
+        disable_skill, enable_skill, get_skills_repo, import_skills, open_skills_repo,
+        rollback_skill, test_skill,
+    },
     tasks::task_artifacts,
-    workspace::{remove_workspace, common_folders, open_workspace, pick_folder, list_dir, list_workspace_files, open_path},
+    workspace::{
+        common_folders, list_dir, list_workspace_files, open_path, open_workspace, pick_folder,
+        remove_workspace,
+    },
 };
 use oh_core::config::AppSettings;
 use oh_core::model::EngineEvent;

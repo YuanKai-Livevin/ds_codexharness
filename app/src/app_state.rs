@@ -8,9 +8,6 @@ use std::path::PathBuf;
 use std::sync::atomic::AtomicBool;
 use tokio::sync::Mutex;
 
-/// 记忆面板/翻译层服务端口（与 oh-core 常量保持一致）。
-pub(crate) const MEMORY_PORT: u16 = oh_core::MEMORY_PORT;
-
 /// 统一引擎状态机（T0-06）：由本状态为唯一真相源，前端只消费这一个状态。
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 pub(crate) enum EngineState {

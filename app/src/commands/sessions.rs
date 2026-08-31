@@ -7,7 +7,9 @@ use tauri::State;
 
 /// 列出当前工作区下的会话（任务历史）。
 #[tauri::command]
-pub(crate) async fn list_sessions(state: State<'_, AppState>) -> Result<Vec<oh_core::codex::ThreadInfo>, String> {
+pub(crate) async fn list_sessions(
+    state: State<'_, AppState>,
+) -> Result<Vec<oh_core::codex::ThreadInfo>, String> {
     let mut guard = state.engine.lock().await;
     let server = guard.as_mut().ok_or_else(|| "引擎未启动".to_string())?;
     let s = state.settings.lock().await.clone();
@@ -37,7 +39,12 @@ pub(crate) async fn new_session(state: State<'_, AppState>) -> Result<String, St
     let ws = workspace::ensure_workspace(&s.workspace_path)?;
     let skills_repo = data_root().join("skills").to_string_lossy().to_string();
     let tid = server
-        .start_thread(&ws.to_string_lossy(), &s.sandbox_mode, &s.model, &skills_repo)
+        .start_thread(
+            &ws.to_string_lossy(),
+            &s.sandbox_mode,
+            &s.model,
+            &skills_repo,
+        )
         .await
         .map_err(|e| format!("新建会话失败: {}", e))?;
     // 新会话 = 全新上下文：复位记忆面板水位（tokens/round 归零）
@@ -47,7 +54,10 @@ pub(crate) async fn new_session(state: State<'_, AppState>) -> Result<String, St
 
 /// 切换到指定会话。
 #[tauri::command]
-pub(crate) async fn switch_session(state: State<'_, AppState>, thread_id: String) -> Result<(), String> {
+pub(crate) async fn switch_session(
+    state: State<'_, AppState>,
+    thread_id: String,
+) -> Result<(), String> {
     let mut guard = state.engine.lock().await;
     let server = guard.as_mut().ok_or_else(|| "引擎未启动".to_string())?;
     server
@@ -59,7 +69,10 @@ pub(crate) async fn switch_session(state: State<'_, AppState>, thread_id: String
 
 /// 删除指定会话（若删除的是当前会话，自动新建一个）。
 #[tauri::command]
-pub(crate) async fn delete_session(state: State<'_, AppState>, thread_id: String) -> Result<String, String> {
+pub(crate) async fn delete_session(
+    state: State<'_, AppState>,
+    thread_id: String,
+) -> Result<String, String> {
     let mut guard = state.engine.lock().await;
     let server = guard.as_mut().ok_or_else(|| "引擎未启动".to_string())?;
     let is_current = server.current_thread_id().await.as_deref() == Some(thread_id.as_str());
@@ -72,7 +85,12 @@ pub(crate) async fn delete_session(state: State<'_, AppState>, thread_id: String
         let ws = workspace::ensure_workspace(&s.workspace_path)?;
         let skills_repo = data_root().join("skills").to_string_lossy().to_string();
         let tid = server
-            .start_thread(&ws.to_string_lossy(), &s.sandbox_mode, &s.model, &skills_repo)
+            .start_thread(
+                &ws.to_string_lossy(),
+                &s.sandbox_mode,
+                &s.model,
+                &skills_repo,
+            )
             .await
             .map_err(|e| format!("新建会话失败: {}", e))?;
         Ok(tid)
@@ -105,10 +123,11 @@ pub(crate) async fn list_tmp(state: State<'_, AppState>) -> Result<Vec<String>, 
         return Ok(vec![]);
     }
     let mut out = Vec::new();
-    for entry in std::fs::read_dir(&tmp).map_err(|e| e.to_string())? {
-        if let Ok(e) = entry {
-            out.push(e.file_name().to_string_lossy().to_string());
-        }
+    for e in std::fs::read_dir(&tmp)
+        .map_err(|e| e.to_string())?
+        .flatten()
+    {
+        out.push(e.file_name().to_string_lossy().to_string());
     }
     Ok(out)
 }

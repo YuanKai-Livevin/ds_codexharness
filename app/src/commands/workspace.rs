@@ -33,7 +33,10 @@ pub(crate) async fn common_folders() -> Vec<(String, String)> {
 /// 若删除的是当前工作区，自动切换到下一个可用工作区（或默认），返回新工作区路径。
 /// SKILLS 仓库为固定工作区，不可删除。
 #[tauri::command]
-pub(crate) async fn remove_workspace(state: State<'_, AppState>, path: String) -> Result<String, String> {
+pub(crate) async fn remove_workspace(
+    state: State<'_, AppState>,
+    path: String,
+) -> Result<String, String> {
     let skills_repo = data_root().join("skills").to_string_lossy().to_string();
     if path == skills_repo {
         return Err("SKILLS 仓库是固定工作区，不可删除。".to_string());
@@ -49,7 +52,9 @@ pub(crate) async fn remove_workspace(state: State<'_, AppState>, path: String) -
             .to_string_lossy()
             .to_string();
         settings.workspace_path = next.unwrap_or(fallback);
-        settings.recent_workspaces.retain(|w| w != &settings.workspace_path);
+        settings
+            .recent_workspaces
+            .retain(|w| w != &settings.workspace_path);
         switched = true;
     }
     settings.save(&state.settings_path)?;
@@ -101,7 +106,10 @@ pub(crate) async fn pick_folder() -> Result<Option<String>, String> {
 
 /// 列出工作区内目录（严格限制在工作区范围；解析 junction 防逃逸）。
 #[tauri::command]
-pub(crate) async fn list_dir(state: State<'_, AppState>, path: String) -> Result<Vec<FileEntry>, String> {
+pub(crate) async fn list_dir(
+    state: State<'_, AppState>,
+    path: String,
+) -> Result<Vec<FileEntry>, String> {
     let s = state.settings.lock().await.clone();
     let ws = workspace::ensure_workspace(&s.workspace_path)?;
     // T0-03：经 WorkspaceGuard 解析（最近的已存在祖先 + 最终路径），拒绝 junction 逃逸
@@ -125,7 +133,11 @@ pub(crate) async fn list_dir(state: State<'_, AppState>, path: String) -> Result
             modified: md
                 .as_ref()
                 .and_then(|m| m.modified().ok())
-                .map(|t| t.duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0))
+                .map(|t| {
+                    t.duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_secs())
+                        .unwrap_or(0)
+                })
                 .unwrap_or(0)
                 .to_string(),
         });
@@ -136,7 +148,9 @@ pub(crate) async fn list_dir(state: State<'_, AppState>, path: String) -> Result
 
 /// 递归列出工作区内全部文件（相对路径），供 @ 引用选择。限制数量避免超大工作区卡顿。
 #[tauri::command]
-pub(crate) async fn list_workspace_files(state: State<'_, AppState>) -> Result<Vec<String>, String> {
+pub(crate) async fn list_workspace_files(
+    state: State<'_, AppState>,
+) -> Result<Vec<String>, String> {
     let s = state.settings.lock().await.clone();
     let ws = workspace::ensure_workspace(&s.workspace_path)?;
     let mut out = Vec::new();
@@ -189,7 +203,11 @@ pub(crate) async fn list_workspace_files(state: State<'_, AppState>) -> Result<V
 
 /// 在工作区内的路径上执行系统操作：打开（默认程序）或"在文件夹中显示"。
 #[tauri::command]
-pub(crate) async fn open_path(state: State<'_, AppState>, path: String, reveal: bool) -> Result<(), String> {
+pub(crate) async fn open_path(
+    state: State<'_, AppState>,
+    path: String,
+    reveal: bool,
+) -> Result<(), String> {
     let s = state.settings.lock().await.clone();
     let ws = workspace::ensure_workspace(&s.workspace_path)?;
     // T0-03：经 WorkspaceGuard 解析最终路径（防 junction/symlink 逃逸）

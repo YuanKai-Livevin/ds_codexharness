@@ -29,13 +29,13 @@ pub(crate) async fn start_engine_inner(
     api_key: String,
 ) -> Result<(), String> {
     let res = start_engine_inner_impl(app, state, api_key).await;
-    if res.is_err() {
+    if let Err(err) = &res {
         // R6 审计：启动失败
         state.audit.record(
             None,
             "error",
             "engine_start_failed",
-            serde_json::json!({ "msg": redact(res.as_ref().unwrap_err()) }),
+            serde_json::json!({ "msg": redact(err) }),
         );
         let st = *state.engine_state.lock().await;
         // 只在仍处于 Starting（未成功也未主动停止）时标记失败
@@ -46,7 +46,7 @@ pub(crate) async fn start_engine_inner(
                 "oh-event",
                 EngineEvent::Status {
                     state: "failed".into(),
-                    detail: res.as_ref().unwrap_err().clone(),
+                    detail: err.clone(),
                 },
             );
         }
@@ -87,11 +87,16 @@ async fn start_engine_inner_impl(
             // 内网免密钥模式：无需 Key，用占位值让引擎跳过鉴权（requires_openai_auth=false）
             key = "EMPTY".to_string();
         } else {
-            return Err("未配置 API Key。若为内网免密钥部署，请勾选「内网部署，无需 API Key」。".to_string());
+            return Err(
+                "未配置 API Key。若为内网免密钥部署，请勾选「内网部署，无需 API Key」。"
+                    .to_string(),
+            );
         }
     }
     if !bundled.python_available() {
-        return Err("未找到内置 Python 运行时（runtime/python312），请检查程序目录是否完整。".to_string());
+        return Err(
+            "未找到内置 Python 运行时（runtime/python312），请检查程序目录是否完整。".to_string(),
+        );
     }
     if !bundled.codex_available() {
         return Err("未找到内置 codex 引擎（codex-bin），请检查程序目录是否完整。".to_string());
@@ -182,13 +187,14 @@ async fn start_engine_inner_impl(
         }),
     );
 
-    let mut server = match CodexServer::spawn(&bundled, &state.codex_home, &settings, &engine_key).await {
-        Ok(s) => s,
-        Err(e) => {
-            abort_startup(state).await;
-            return Err(format!("启动引擎失败: {}", e));
-        }
-    };
+    let mut server =
+        match CodexServer::spawn(&bundled, &state.codex_home, &settings, &engine_key).await {
+            Ok(s) => s,
+            Err(e) => {
+                abort_startup(state).await;
+                return Err(format!("启动引擎失败: {}", e));
+            }
+        };
 
     // T0-05：spawn 后再查一次取消（initialize 可能较慢，用户在等待时可取消）
     if state.start_cancel.swap(false, Ordering::SeqCst) {
@@ -204,10 +210,17 @@ async fn start_engine_inner_impl(
     }
 
     // 注册 SKILLS 仓库为 codex 额外技能根
-    let _ = server.register_skills_roots(&[skills_repo_str.clone()]).await;
+    let _ = server
+        .register_skills_roots(std::slice::from_ref(&skills_repo_str))
+        .await;
 
     let thread_id = match server
-        .start_thread(&ws_str, &settings.sandbox_mode, &settings.model, &skills_repo_str)
+        .start_thread(
+            &ws_str,
+            &settings.sandbox_mode,
+            &settings.model,
+            &skills_repo_str,
+        )
         .await
     {
         Ok(t) => t,
@@ -271,7 +284,12 @@ async fn start_engine_inner_impl(
                         }),
                     );
                 }
-                EngineEvent::CommandCompleted { command, status, output, .. } => {
+                EngineEvent::CommandCompleted {
+                    command,
+                    status,
+                    output,
+                    ..
+                } => {
                     let tid = current_task_id(&st).await;
                     st.audit.record(
                         tid.as_deref(),
@@ -298,7 +316,14 @@ async fn start_engine_inner_impl(
                         serde_json::json!({ "summary": redact(summary) }),
                     );
                 }
-                EngineEvent::ApprovalRequest { request_id, kind, command, reason, changes, .. } => {
+                EngineEvent::ApprovalRequest {
+                    request_id,
+                    kind,
+                    command,
+                    reason,
+                    changes,
+                    ..
+                } => {
                     let tid = current_task_id(&st).await;
                     st.audit.record(
                         tid.as_deref(),
@@ -409,14 +434,20 @@ async fn start_engine_inner_impl(
     let sb_mode = settings.windows_sandbox.clone();
     let sb_ws = ws_str.clone();
     let sb_log = app.clone();
-    let readiness = server.sandbox_readiness().await.unwrap_or_else(|_| "unknown".to_string());
+    let readiness = server
+        .sandbox_readiness()
+        .await
+        .unwrap_or_else(|_| "unknown".to_string());
     if readiness != "ready" {
         let _ = server.setup_windows_sandbox_mode(&sb_ws, &sb_mode).await;
         let _ = sb_log.emit(
             "oh-event",
             EngineEvent::Log {
                 level: "info".into(),
-                msg: format!("Windows 沙箱状态 {}，已自动发起配置（{}）", readiness, sb_mode),
+                msg: format!(
+                    "Windows 沙箱状态 {}，已自动发起配置（{}）",
+                    readiness, sb_mode
+                ),
             },
         );
     }
@@ -476,7 +507,10 @@ fn seed_office_tools_skill(bundled: &Bundled, skills_repo: &std::path::Path) {
         true
     } else {
         // 内置技能与部署副本内容不同 → 刷新（内置技能随版本升级，用户误改会被版本覆盖）
-        match (std::fs::read(src.join("SKILL.md")), std::fs::read(dst.join("SKILL.md"))) {
+        match (
+            std::fs::read(src.join("SKILL.md")),
+            std::fs::read(dst.join("SKILL.md")),
+        ) {
             (Ok(a), Ok(b)) => a != b,
             _ => true,
         }
@@ -533,7 +567,12 @@ pub(crate) async fn stop_engine(state: State<'_, AppState>) -> Result<(), String
         *state.engine_pid.lock().await = None;
         *state.engine_state.lock().await = EngineState::Stopped;
         state.engine_running.store(false, Ordering::SeqCst);
-        state.audit.record(None, "engine", "engine_start_cancelled", serde_json::json!({}));
+        state.audit.record(
+            None,
+            "engine",
+            "engine_start_cancelled",
+            serde_json::json!({}),
+        );
         return Ok(());
     }
     *state.engine_state.lock().await = EngineState::Stopping;
@@ -548,7 +587,9 @@ pub(crate) async fn stop_engine(state: State<'_, AppState>) -> Result<(), String
     *state.engine_state.lock().await = EngineState::Stopped;
     state.engine_running.store(false, Ordering::SeqCst);
     // R6 审计：引擎停止
-    state.audit.record(None, "engine", "engine_stop", serde_json::json!({}));
+    state
+        .audit
+        .record(None, "engine", "engine_stop", serde_json::json!({}));
     Ok(())
 }
 
@@ -625,9 +666,7 @@ pub(crate) async fn respond_approval(
     let tid = current_task_id(&state).await;
     let res = {
         let mut guard = state.engine.lock().await;
-        let server = guard
-            .as_mut()
-            .ok_or_else(|| "引擎未启动".to_string())?;
+        let server = guard.as_mut().ok_or_else(|| "引擎未启动".to_string())?;
         server
             .respond_approval(request_id, &decision)
             .await

@@ -1,4 +1,4 @@
-﻿//! Rust 驱动全链路诊断：真实 key + 真实工作区，打印收到的所有事件。
+//! Rust 驱动全链路诊断：真实 key + 真实工作区，打印收到的所有事件。
 //! 运行: cargo run --example diag_rust -p oh-core
 use oh_core::codex::CodexServer;
 use oh_core::config::AppSettings;
@@ -36,7 +36,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut server = CodexServer::spawn(&bundled, &home, &settings, &key).await?;
     server.initialize().await?;
     let tid = server
-        .start_thread(&settings.workspace_path, "workspace-write", &settings.model, "")
+        .start_thread(
+            &settings.workspace_path,
+            "workspace-write",
+            &settings.model,
+            "",
+        )
         .await?;
     println!("thread: {}", tid);
 

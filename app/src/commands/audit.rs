@@ -2,7 +2,7 @@
 
 use crate::app_state::AppState;
 use crate::services::audit::AuditRow;
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, State};
 
 /// 查询最近 N 条审计记录（时间倒序）。
 #[tauri::command]
@@ -27,7 +27,7 @@ pub(crate) async fn audit_accept(
 /// 只由用户主动调用；不包含 API Key 明文/密文。
 #[tauri::command]
 pub(crate) async fn audit_export(
-    app: AppHandle,
+    _app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<String, String> {
     let rows = state.audit.all()?;
@@ -72,7 +72,10 @@ pub(crate) async fn audit_export(
         rfd::AsyncFileDialog::new()
             .set_title("导出诊断包（已脱敏，不含 API Key）")
             .add_filter("JSON", &["json"])
-            .set_file_name(format!("harness-diagnostics-{}.json", ts.replace([':', ' '], "-")))
+            .set_file_name(format!(
+                "harness-diagnostics-{}.json",
+                ts.replace([':', ' '], "-")
+            ))
             .save_file()
             .await
     });

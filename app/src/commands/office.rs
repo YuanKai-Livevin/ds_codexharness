@@ -1,4 +1,4 @@
-﻿//! LibreOffice 命令：状态、打开、转换。
+//! LibreOffice 命令：状态、打开、转换。
 
 use crate::app_state::AppState;
 use oh_core::python::Bundled;
@@ -40,7 +40,7 @@ pub(crate) async fn open_in_libreoffice(
         use std::os::windows::process::CommandExt;
         cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
     }
-    cmd.arg("--norestore").arg(&target);
+    cmd.arg("--norestore").arg(target);
     cmd.spawn().map_err(|e| e.to_string())?;
     Ok(())
 }
@@ -86,10 +86,15 @@ pub(crate) async fn convert_office(
         .arg(&fmt)
         .arg("--outdir")
         .arg(&out_dir_str)
-        .arg(&target);
-    let out = cmd.output().map_err(|e| format!("启动 LibreOffice 失败: {}", e))?;
+        .arg(target);
+    let out = cmd
+        .output()
+        .map_err(|e| format!("启动 LibreOffice 失败: {}", e))?;
     // 输出文件：与源文件同名，扩展名改为目标格式
-    let stem = target.file_stem().and_then(|s| s.to_str()).unwrap_or("output");
+    let stem = target
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("output");
     let result = out_dir.join(format!("{}.{}", stem, fmt));
     if !result.exists() {
         let log = String::from_utf8_lossy(&out.stderr);

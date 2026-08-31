@@ -5,7 +5,11 @@ use std::path::Path;
 
 /// 生成 CODEX_HOME 下的 config.toml 与审批规则。
 /// `bridge_port`：启用内置翻译层时本地网关端口（None 则直连 settings.base_url）。
-pub fn prepare_home(codex_home: &Path, settings: &AppSettings, bridge_port: Option<u16>) -> Result<(), String> {
+pub fn prepare_home(
+    codex_home: &Path,
+    settings: &AppSettings,
+    bridge_port: Option<u16>,
+) -> Result<(), String> {
     std::fs::create_dir_all(codex_home.join("rules")).map_err(|e| e.to_string())?;
     // 内网免密钥模式：requires_openai_auth=false，引擎不校验 Key
     let no_auth_line = if settings.no_auth {
@@ -43,7 +47,11 @@ env_key = "{}"
         model,
         provider_slug,
         settings.sandbox_mode,
-        if settings.windows_sandbox == "elevated" { "elevated" } else { "unelevated" },
+        if settings.windows_sandbox == "elevated" {
+            "elevated"
+        } else {
+            "unelevated"
+        },
         provider_slug,
         toml_escape(&settings.provider_name),
         base_url,

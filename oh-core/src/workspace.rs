@@ -77,7 +77,8 @@ pub fn ensure_workspace(path: &str) -> Result<PathBuf, String> {
             canon.display()
         ));
     }
-    std::fs::create_dir_all(&canon).map_err(|e| format!("无法创建工作区目录 {}: {}", canon.display(), e))?;
+    std::fs::create_dir_all(&canon)
+        .map_err(|e| format!("无法创建工作区目录 {}: {}", canon.display(), e))?;
     Ok(canon)
 }
 
@@ -89,9 +90,11 @@ fn is_rejected_workspace(p: &Path) -> bool {
         return true;
     }
     let lower = canon.to_string_lossy().to_lowercase();
-    REJECTED_WORKSPACES
-        .iter()
-        .any(|r| lower == *r || lower.starts_with(&(r.to_string() + "\\")) || lower.starts_with(&(r.to_string() + "/")))
+    REJECTED_WORKSPACES.iter().any(|r| {
+        lower == *r
+            || lower.starts_with(&(r.to_string() + "\\"))
+            || lower.starts_with(&(r.to_string() + "/"))
+    })
 }
 
 /// 宽松规范化（不要求路径存在）。
@@ -120,7 +123,11 @@ pub fn final_path(p: &Path) -> Option<PathBuf> {
         OPEN_EXISTING,
     };
 
-    let wide: Vec<u16> = p.as_os_str().encode_wide().chain(std::iter::once(0)).collect();
+    let wide: Vec<u16> = p
+        .as_os_str()
+        .encode_wide()
+        .chain(std::iter::once(0))
+        .collect();
     unsafe {
         let handle = CreateFileW(
             wide.as_ptr(),
@@ -221,13 +228,19 @@ pub fn guard_resolve(target: &Path, ws: &Path) -> Result<PathBuf, String> {
         match cur.file_name() {
             Some(n) => missing.push(n.to_os_string()),
             None => {
-                return Err(format!("无法解析路径的最近已存在祖先: {}", target.display()));
+                return Err(format!(
+                    "无法解析路径的最近已存在祖先: {}",
+                    target.display()
+                ));
             }
         }
         match cur.parent() {
             Some(p) => cur = p,
             None => {
-                return Err(format!("无法解析路径的最近已存在祖先: {}", target.display()));
+                return Err(format!(
+                    "无法解析路径的最近已存在祖先: {}",
+                    target.display()
+                ));
             }
         }
     }
@@ -258,7 +271,10 @@ pub fn scan_text_for_escapes(text: &str, workspace: Option<&Path>) -> Vec<Escape
         if lower.contains(&dl) {
             issues.push(EscapeIssue {
                 snippet: d.to_string(),
-                message: format!("检测到系统级目录「{}」，已拒绝。所有操作仅允许在工作区目录内进行。", d),
+                message: format!(
+                    "检测到系统级目录「{}」，已拒绝。所有操作仅允许在工作区目录内进行。",
+                    d
+                ),
             });
         }
     }
@@ -267,13 +283,19 @@ pub fn scan_text_for_escapes(text: &str, workspace: Option<&Path>) -> Vec<Escape
     let mut rest = lower.as_str();
     while let Some(idx) = rest.find("..") {
         // 确认它确实是路径穿越（前后是路径分隔符或边界）
-        let before_ok = idx == 0 || matches!(rest.as_bytes()[idx - 1], b' ' | b'/' | b'\\' | b'"' | b'\'' | b'(' | b'\n' | b'\r' | b'\t');
+        let before_ok = idx == 0
+            || matches!(
+                rest.as_bytes()[idx - 1],
+                b' ' | b'/' | b'\\' | b'"' | b'\'' | b'(' | b'\n' | b'\r' | b'\t'
+            );
         if before_ok {
             let after = rest[idx + 2..].chars().next();
             if matches!(after, Some('/') | Some('\\')) {
                 issues.push(EscapeIssue {
                     snippet: "..".to_string(),
-                    message: "检测到目录穿越（../ 或 ..\\），已拒绝。所有操作仅允许在工作区目录内进行。".to_string(),
+                    message:
+                        "检测到目录穿越（../ 或 ..\\），已拒绝。所有操作仅允许在工作区目录内进行。"
+                            .to_string(),
                 });
                 // 跳过这组
                 rest = &rest[idx + 2..];
@@ -297,7 +319,9 @@ pub fn scan_text_for_escapes(text: &str, workspace: Option<&Path>) -> Vec<Escape
             let mut end = pos + 2;
             while end < bytes.len() {
                 let ch = bytes[end] as char;
-                if ch.is_whitespace() || matches!(ch, '"' | '\'' | '，' | '。' | '；' | '、' | ')' | '】') {
+                if ch.is_whitespace()
+                    || matches!(ch, '"' | '\'' | '，' | '。' | '；' | '、' | ')' | '】')
+                {
                     break;
                 }
                 end += 1;
@@ -338,7 +362,15 @@ mod tests {
     #[test]
     fn rejected_workspaces() {
         // 盘符根目录 / 系统目录 / 应用数据目录均拒绝
-        for bad in [r"C:\", r"D:\", r"C:\Windows", r"C:\Windows\System32", r"C:\HARNESS", r"C:\Program Files", "/"] {
+        for bad in [
+            r"C:\",
+            r"D:\",
+            r"C:\Windows",
+            r"C:\Windows\System32",
+            r"C:\HARNESS",
+            r"C:\Program Files",
+            "/",
+        ] {
             let p = PathBuf::from(bad);
             if p.is_absolute() {
                 assert!(is_rejected_workspace(&p), "应拒绝: {}", bad);
@@ -359,7 +391,10 @@ mod tests {
     #[test]
     fn escape_scan() {
         let ws = Path::new(r"C:\work\ws");
-        let issues = scan_text_for_escapes("把 ../secret.txt 删掉，还有 C:\\Windows\\system32", Some(ws));
+        let issues = scan_text_for_escapes(
+            "把 ../secret.txt 删掉，还有 C:\\Windows\\system32",
+            Some(ws),
+        );
         assert!(issues.iter().any(|i| i.message.contains("系统级目录")));
         assert!(issues.iter().any(|i| i.message.contains("目录穿越")));
         let issues2 = scan_text_for_escapes("合并工作区里的 a.xlsx 和 b.xlsx", Some(ws));
@@ -404,7 +439,13 @@ mod tests {
         std::fs::write(outside.join("secret.txt"), b"s").unwrap();
         let link = ws.join("link");
         let out = std::process::Command::new("cmd")
-            .args(["/c", "mklink", "/J", link.to_str().unwrap(), outside.to_str().unwrap()])
+            .args([
+                "/c",
+                "mklink",
+                "/J",
+                link.to_str().unwrap(),
+                outside.to_str().unwrap(),
+            ])
             .output();
         if let Ok(o) = out {
             if o.status.success() {

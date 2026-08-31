@@ -35,7 +35,10 @@ pub(crate) async fn get_settings(state: State<'_, AppState>) -> Result<AppSettin
 }
 
 #[tauri::command]
-pub(crate) async fn save_settings(state: State<'_, AppState>, settings: AppSettings) -> Result<(), String> {
+pub(crate) async fn save_settings(
+    state: State<'_, AppState>,
+    settings: AppSettings,
+) -> Result<(), String> {
     // 校验工作区（必须是非空绝对路径的文件夹）
     let ws = workspace::ensure_workspace(&settings.workspace_path)?;
     let ws_str = ws.to_string_lossy().to_string();
@@ -75,14 +78,18 @@ pub(crate) async fn save_settings(state: State<'_, AppState>, settings: AppSetti
 /// 保存 API Key（DPAPI 加密后写入 settings.json）。
 /// 空值视为「未填写」：保留已保存的 Key，避免设置页误清除。
 #[tauri::command]
-pub(crate) async fn save_api_key(state: State<'_, AppState>, api_key: String) -> Result<(), String> {
+pub(crate) async fn save_api_key(
+    state: State<'_, AppState>,
+    api_key: String,
+) -> Result<(), String> {
     let mut settings = state.settings.lock().await.clone();
     let trimmed = api_key.trim().to_string();
     if trimmed.is_empty() {
         // 未填写 → 保留现有密文，不覆盖
         return Ok(());
     }
-    settings.api_key_enc = Some(dpapi::encrypt(&trimmed).map_err(|e| format!("加密 API Key 失败: {}", e))?);
+    settings.api_key_enc =
+        Some(dpapi::encrypt(&trimmed).map_err(|e| format!("加密 API Key 失败: {}", e))?);
     settings.save(&state.settings_path)?;
     *state.settings.lock().await = settings;
     Ok(())
@@ -92,12 +99,17 @@ pub(crate) async fn save_api_key(state: State<'_, AppState>, api_key: String) ->
 #[tauri::command]
 pub(crate) async fn has_api_key(state: State<'_, AppState>) -> Result<bool, String> {
     let s = state.settings.lock().await;
-    Ok(s.api_key_enc.as_deref().map(|e| !e.is_empty()).unwrap_or(false))
+    Ok(s.api_key_enc
+        .as_deref()
+        .map(|e| !e.is_empty())
+        .unwrap_or(false))
 }
 
 /// 当前实际使用的 API Key（脱敏显示：前 6 + 后 4，供用户确认用的哪个 Key）。
 #[tauri::command]
-pub(crate) async fn get_api_key_masked(state: State<'_, AppState>) -> Result<MaskedKeyInfo, String> {
+pub(crate) async fn get_api_key_masked(
+    state: State<'_, AppState>,
+) -> Result<MaskedKeyInfo, String> {
     let s = state.settings.lock().await.clone();
     let mut info = MaskedKeyInfo {
         present: false,
@@ -197,11 +209,26 @@ print(json.dumps(rep, ensure_ascii=False))
         .map_err(|e| format!("无法启动 Python: {}", e))?;
     let msg = String::from_utf8_lossy(&out.stdout).trim().to_string();
     // 解析能力档案
-    let caps: serde_json::Value = serde_json::from_str(&msg).unwrap_or_else(|_| serde_json::json!({ "parse_error": msg }));
-    let models_ok = caps.get("models_http").and_then(|v| v.as_i64()).map(|v| v == 200).unwrap_or(false);
-    let supports_responses = caps.get("supports_responses").and_then(|v| v.as_bool()).unwrap_or(false);
-    let supports_chat = caps.get("supports_chat").and_then(|v| v.as_bool()).unwrap_or(false);
-    let suggestion = caps.get("suggestion").and_then(|v| v.as_str()).unwrap_or("check_base").to_string();
+    let caps: serde_json::Value =
+        serde_json::from_str(&msg).unwrap_or_else(|_| serde_json::json!({ "parse_error": msg }));
+    let models_ok = caps
+        .get("models_http")
+        .and_then(|v| v.as_i64())
+        .map(|v| v == 200)
+        .unwrap_or(false);
+    let supports_responses = caps
+        .get("supports_responses")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let supports_chat = caps
+        .get("supports_chat")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false);
+    let suggestion = caps
+        .get("suggestion")
+        .and_then(|v| v.as_str())
+        .unwrap_or("check_base")
+        .to_string();
     let ok = models_ok || supports_responses || supports_chat;
     let mut caps_obj = caps.clone();
     caps_obj["ok"] = serde_json::json!(ok);
@@ -214,7 +241,10 @@ print(json.dumps(rep, ensure_ascii=False))
             "✅ 连接成功：模型服务可用".to_string()
         }
     } else {
-        format!("连接失败：无法访问 {}/models、/responses、/chat/completions", base)
+        format!(
+            "连接失败：无法访问 {}/models、/responses、/chat/completions",
+            base
+        )
     };
     caps_obj["message"] = serde_json::json!(message);
     Ok(caps_obj)
@@ -222,7 +252,10 @@ print(json.dumps(rep, ensure_ascii=False))
 
 /// 引擎与运行环境状态。
 #[tauri::command]
-pub(crate) async fn get_status(state: State<'_, AppState>, app: AppHandle) -> Result<StatusInfo, String> {
+pub(crate) async fn get_status(
+    state: State<'_, AppState>,
+    app: AppHandle,
+) -> Result<StatusInfo, String> {
     let s = state.settings.lock().await.clone();
     let bundled = Bundled::new(app.path().resource_dir().ok().as_deref());
     Ok(StatusInfo {

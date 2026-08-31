@@ -23,7 +23,11 @@ pub fn app_root(exe_path: Option<&Path>) -> PathBuf {
         v
     };
     for c in &candidates {
-        if c.join("runtime").join("python312").join("python.exe").exists() {
+        if c.join("runtime")
+            .join("python312")
+            .join("python.exe")
+            .exists()
+        {
             return c.clone();
         }
     }
@@ -39,11 +43,16 @@ pub struct Bundled {
 
 impl Bundled {
     pub fn new(exe_path: Option<&Path>) -> Self {
-        Self { root: app_root(exe_path) }
+        Self {
+            root: app_root(exe_path),
+        }
     }
 
     pub fn python_exe(&self) -> PathBuf {
-        self.root.join("runtime").join("python312").join("python.exe")
+        self.root
+            .join("runtime")
+            .join("python312")
+            .join("python.exe")
     }
 
     pub fn python_dir(&self) -> PathBuf {
@@ -73,7 +82,9 @@ impl Bundled {
     }
 
     pub fn sandbox_setup_exe(&self) -> PathBuf {
-        self.root.join("codex-bin").join("codex-windows-sandbox-setup.exe")
+        self.root
+            .join("codex-bin")
+            .join("codex-windows-sandbox-setup.exe")
     }
 
     /// office-tools 工具包目录（R10；兼容生产布局 office-tools 与开发布局 tools/office-tools）。

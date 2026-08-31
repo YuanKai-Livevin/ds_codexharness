@@ -62,7 +62,9 @@ impl AuditStore {
             CREATE INDEX IF NOT EXISTS idx_audit_ts ON audit_events(ts);
             CREATE INDEX IF NOT EXISTS idx_audit_cat ON audit_events(category);",
         );
-        Self { conn: Mutex::new(conn) }
+        Self {
+            conn: Mutex::new(conn),
+        }
     }
 
     fn now_ms() -> i64 {
@@ -81,15 +83,7 @@ impl AuditStore {
         detail: serde_json::Value,
     ) {
         self.record_full(
-            task_id,
-            category,
-            event,
-            detail,
-            None,
-            None,
-            None,
-            None,
-            None,
+            task_id, category, event, detail, None, None, None, None, None,
         );
     }
 
@@ -132,10 +126,7 @@ impl AuditStore {
 
     /// 标记任务最终是否被用户接受。
     pub(crate) fn mark_accepted(&self, task_id: &str, accepted: bool) -> Result<(), String> {
-        let g = self
-            .conn
-            .lock()
-            .map_err(|_| "审计库锁不可用".to_string())?;
+        let g = self.conn.lock().map_err(|_| "审计库锁不可用".to_string())?;
         g.execute(
             "UPDATE audit_events SET accepted = ?1 WHERE task_id = ?2 AND event = 'task_end'",
             rusqlite::params![if accepted { 1 } else { 0 }, task_id],
@@ -146,10 +137,7 @@ impl AuditStore {
 
     /// 按时间倒序取最近 N 条。
     pub(crate) fn list(&self, limit: usize) -> Result<Vec<AuditRow>, String> {
-        let g = self
-            .conn
-            .lock()
-            .map_err(|_| "审计库锁不可用".to_string())?;
+        let g = self.conn.lock().map_err(|_| "审计库锁不可用".to_string())?;
         let limit = limit.clamp(1, 2000) as i64;
         let mut stmt = g
             .prepare(
@@ -192,14 +180,14 @@ pub(crate) fn parse_usage_tokens(usage: &str) -> (Option<i64>, Option<i64>) {
         Ok(v) => v,
         Err(_) => return (None, None),
     };
-    let inp = v
-        .get("input_tokens")
-        .and_then(|x| x.as_i64())
-        .or_else(|| v.pointer("/total_token_usage/input_tokens").and_then(|x| x.as_i64()));
-    let outp = v
-        .get("output_tokens")
-        .and_then(|x| x.as_i64())
-        .or_else(|| v.pointer("/total_token_usage/output_tokens").and_then(|x| x.as_i64()));
+    let inp = v.get("input_tokens").and_then(|x| x.as_i64()).or_else(|| {
+        v.pointer("/total_token_usage/input_tokens")
+            .and_then(|x| x.as_i64())
+    });
+    let outp = v.get("output_tokens").and_then(|x| x.as_i64()).or_else(|| {
+        v.pointer("/total_token_usage/output_tokens")
+            .and_then(|x| x.as_i64())
+    });
     (inp, outp)
 }
 
@@ -292,7 +280,12 @@ mod tests {
             Some(0.001),
             None,
         );
-        store.record(Some("task-1"), "tool", "command_completed", serde_json::json!({"command": "Get-ChildItem"}));
+        store.record(
+            Some("task-1"),
+            "tool",
+            "command_completed",
+            serde_json::json!({"command": "Get-ChildItem"}),
+        );
         let rows = store.list(10).unwrap();
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0].category, "tool");

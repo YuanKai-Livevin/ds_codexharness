@@ -84,7 +84,11 @@ pub struct CodexServer {
 
 impl CodexServer {
     /// 生成 CODEX_HOME 下的 config.toml 与审批规则（实现见 provider 模块）。
-    pub fn prepare_home(codex_home: &Path, settings: &AppSettings, bridge_port: Option<u16>) -> Result<(), String> {
+    pub fn prepare_home(
+        codex_home: &Path,
+        settings: &AppSettings,
+        bridge_port: Option<u16>,
+    ) -> Result<(), String> {
         crate::provider::prepare_home(codex_home, settings, bridge_port)
     }
 
@@ -116,10 +120,9 @@ impl CodexServer {
         if lo_program.exists() {
             dirs.push(lo_program); // LibreOffice 供 agent 直接调用 soffice
         }
-        let path = std::env::join_paths(
-            dirs.into_iter()
-                .chain(std::env::split_paths(&std::env::var("PATH").unwrap_or_default())),
-        )
+        let path = std::env::join_paths(dirs.into_iter().chain(std::env::split_paths(
+            &std::env::var("PATH").unwrap_or_default(),
+        )))
         .unwrap_or_default();
         let path_str = path.to_string_lossy().to_string();
 
@@ -130,7 +133,6 @@ impl CodexServer {
         // Windows 下抑制子进程控制台窗口（避免启动引擎时弹出黑窗口）
         #[cfg(windows)]
         {
-            use std::os::windows::process::CommandExt;
             cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
         }
         cmd.env("CODEX_HOME", codex_home)
@@ -143,9 +145,18 @@ impl CodexServer {
             .current_dir(codex_home);
 
         let mut child = cmd.spawn()?;
-        let stdin = child.stdin.take().ok_or_else(|| CodexError::Other("无法获取 stdin".into()))?;
-        let stdout = child.stdout.take().ok_or_else(|| CodexError::Other("无法获取 stdout".into()))?;
-        let stderr = child.stderr.take().ok_or_else(|| CodexError::Other("无法获取 stderr".into()))?;
+        let stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| CodexError::Other("无法获取 stdin".into()))?;
+        let stdout = child
+            .stdout
+            .take()
+            .ok_or_else(|| CodexError::Other("无法获取 stdout".into()))?;
+        let stderr = child
+            .stderr
+            .take()
+            .ok_or_else(|| CodexError::Other("无法获取 stderr".into()))?;
 
         let (events_tx, events_rx) = mpsc::unbounded_channel::<EngineEvent>();
         let (out_tx, out_rx) = mpsc::unbounded_channel::<String>();
@@ -234,7 +245,10 @@ impl CodexServer {
             };
             let mut lines = BufReader::new(stderr).lines();
             while let Ok(Some(line)) = lines.next_line().await {
-                let _ = ltx.send(EngineEvent::Log { level: "stderr".into(), msg: line.clone() });
+                let _ = ltx.send(EngineEvent::Log {
+                    level: "stderr".into(),
+                    msg: line.clone(),
+                });
                 if let Some(f) = log_file.as_mut() {
                     use tokio::io::AsyncWriteExt;
                     let _ = f.write_all(format!("{}\n", line).as_bytes()).await;
@@ -255,6 +269,7 @@ impl CodexServer {
         })
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn dispatch_line(
         line: &str,
         events: &mpsc::UnboundedSender<EngineEvent>,
@@ -266,10 +281,17 @@ impl CodexServer {
         turn_id: &Arc<Mutex<Option<String>>>,
     ) {
         let Ok(v) = serde_json::from_str::<Value>(line) else {
-            let _ = events.send(EngineEvent::Log { level: "raw".into(), msg: line.to_string() });
+            let _ = events.send(EngineEvent::Log {
+                level: "raw".into(),
+                msg: line.to_string(),
+            });
             return;
         };
-        let method = v.get("method").and_then(|m| m.as_str()).unwrap_or("").to_string();
+        let method = v
+            .get("method")
+            .and_then(|m| m.as_str())
+            .unwrap_or("")
+            .to_string();
         let has_id = v.get("id").is_some();
 
         if has_id {
@@ -319,9 +341,7 @@ impl CodexServer {
     }
 
     pub fn events(&mut self) -> &mut mpsc::UnboundedReceiver<EngineEvent> {
-        self.events
-            .as_mut()
-            .expect("events receiver already taken")
+        self.events.as_mut().expect("events receiver already taken")
     }
 
     /// 取出事件接收端（由事件转发任务持有）。
@@ -337,7 +357,9 @@ impl CodexServer {
         });
         self.request("initialize", params).await.map(|_| ())?;
         // 发送 initialized 通知
-        let _ = self.out_tx.send(json!({ "jsonrpc": "2.0", "method": "initialized" }).to_string());
+        let _ = self
+            .out_tx
+            .send(json!({ "jsonrpc": "2.0", "method": "initialized" }).to_string());
         Ok(())
     }
 
@@ -412,13 +434,21 @@ impl CodexServer {
         let mut out = Vec::new();
         if let Some(arr) = res.get("data").and_then(|d| d.as_array()) {
             for t in arr {
-                let id = t.get("id").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                let id = t
+                    .get("id")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
                 if id.is_empty() {
                     continue;
                 }
                 out.push(ThreadInfo {
                     id,
-                    preview: t.get("preview").and_then(|v| v.as_str()).unwrap_or("").to_string(),
+                    preview: t
+                        .get("preview")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string(),
                     created_at: t.get("createdAt").and_then(|v| v.as_i64()).unwrap_or(0),
                     updated_at: t.get("updatedAt").and_then(|v| v.as_i64()).unwrap_or(0),
                 });
@@ -448,7 +478,10 @@ impl CodexServer {
     }
 
     /// 读取会话历史（含 turns），恢复文本消息、工具调用（命令+输出）、文件变更与轮次状态。
-    pub async fn read_thread_history(&mut self, thread_id: &str) -> Result<Vec<HistoryMessage>, CodexError> {
+    pub async fn read_thread_history(
+        &mut self,
+        thread_id: &str,
+    ) -> Result<Vec<HistoryMessage>, CodexError> {
         let params = json!({ "threadId": thread_id, "includeTurns": true });
         let res = self.request("thread/read", params).await?;
         Ok(parse_thread_history(&res))
@@ -468,7 +501,9 @@ impl CodexServer {
     /// 注册额外的 SKILLS 仓库根（codex skills/extraRoots/set）。
     pub async fn register_skills_roots(&mut self, roots: &[String]) -> Result<(), CodexError> {
         let params = json!({ "extraRoots": roots });
-        self.request("skills/extraRoots/set", params).await.map(|_| ())
+        self.request("skills/extraRoots/set", params)
+            .await
+            .map(|_| ())
     }
 
     /// 列出引擎视角的技能（含额外仓库）。
@@ -491,7 +526,11 @@ impl CodexServer {
     }
 
     /// 响应服务端审批请求。
-    pub async fn respond_approval(&mut self, request_id: i64, decision: &str) -> Result<(), CodexError> {
+    pub async fn respond_approval(
+        &mut self,
+        request_id: i64,
+        decision: &str,
+    ) -> Result<(), CodexError> {
         let msg = json!({ "jsonrpc": "2.0", "id": request_id, "result": { "decision": decision } });
         self.out_tx
             .send(msg.to_string())
@@ -504,9 +543,15 @@ impl CodexServer {
         workspace: &str,
         mode: &str,
     ) -> Result<(), CodexError> {
-        let mode = if mode == "elevated" { "elevated" } else { "unelevated" };
+        let mode = if mode == "elevated" {
+            "elevated"
+        } else {
+            "unelevated"
+        };
         let params = json!({ "mode": mode, "cwd": workspace });
-        self.request("windowsSandbox/setupStart", params).await.map(|_| ())
+        self.request("windowsSandbox/setupStart", params)
+            .await
+            .map(|_| ())
     }
 
     /// 查询 Windows 沙箱就绪状态（Ready / NotConfigured / UpdateRequired）。
@@ -574,7 +619,11 @@ pub(crate) fn parse_thread_history(res: &serde_json::Value) -> Vec<HistoryMessag
             if let Some(items) = turn.get("items").and_then(|i| i.as_array()) {
                 for item in items {
                     let itype = item.get("type").and_then(|v| v.as_str()).unwrap_or("");
-                    let text = item.get("text").and_then(|v| v.as_str()).unwrap_or("").to_string();
+                    let text = item
+                        .get("text")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("")
+                        .to_string();
                     match itype {
                         "userMessage" => {
                             if !text.trim().is_empty() {
@@ -631,7 +680,9 @@ pub(crate) fn parse_thread_history(res: &serde_json::Value) -> Vec<HistoryMessag
                                 .map(|s| s.to_string())
                                 .unwrap_or_else(|| {
                                     let mut parts = Vec::new();
-                                    if let Some(changes) = item.get("changes").and_then(|c| c.as_array()) {
+                                    if let Some(changes) =
+                                        item.get("changes").and_then(|c| c.as_array())
+                                    {
                                         for ch in changes {
                                             let name = ch
                                                 .get("file_name")
@@ -669,14 +720,14 @@ pub(crate) fn parse_thread_history(res: &serde_json::Value) -> Vec<HistoryMessag
 }
 
 /// 解析 thread/read 响应中指定轮次的文件变更（含 old/new 内容）。
-pub(crate) fn parse_thread_file_changes(res: &serde_json::Value, turn_id: &str) -> Vec<ThreadFileChange> {
+pub(crate) fn parse_thread_file_changes(
+    res: &serde_json::Value,
+    turn_id: &str,
+) -> Vec<ThreadFileChange> {
     let mut out = Vec::new();
     if let Some(turns) = res.pointer("/thread/turns").and_then(|t| t.as_array()) {
         for turn in turns {
-            let tid = turn
-                .get("id")
-                .and_then(|v| v.as_str())
-                .unwrap_or("");
+            let tid = turn.get("id").and_then(|v| v.as_str()).unwrap_or("");
             // 只处理目标轮次；turn_id 为空时处理所有轮次
             if !turn_id.is_empty() && !tid.is_empty() && tid != turn_id {
                 continue;
@@ -703,9 +754,22 @@ pub(crate) fn parse_thread_file_changes(res: &serde_json::Value, turn_id: &str) 
                                 .and_then(|v| v.as_str())
                                 .unwrap_or("")
                                 .to_string();
-                            let old = ch.get("old").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                            let new = ch.get("new").and_then(|v| v.as_str()).unwrap_or("").to_string();
-                            out.push(ThreadFileChange { path, change_type: ct, old, new });
+                            let old = ch
+                                .get("old")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string();
+                            let new = ch
+                                .get("new")
+                                .and_then(|v| v.as_str())
+                                .unwrap_or("")
+                                .to_string();
+                            out.push(ThreadFileChange {
+                                path,
+                                change_type: ct,
+                                old,
+                                new,
+                            });
                         }
                     } else if let Some(summary) = item.get("summary").and_then(|v| v.as_str()) {
                         // 无结构化 changes 时兜底：整条摘要作为一条记录

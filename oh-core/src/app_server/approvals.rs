@@ -19,10 +19,26 @@ pub(crate) async fn handle_server_request(
     server_requests.lock().await.insert(id, method.to_string());
     match method {
         "item/commandExecution/requestApproval" => {
-            let command = params.get("command").and_then(|c| c.as_str()).unwrap_or("").to_string();
-            let cwd = params.get("cwd").and_then(|c| c.as_str()).unwrap_or("").to_string();
-            let reason = params.get("reason").and_then(|r| r.as_str()).unwrap_or("").to_string();
-            let item_id = params.get("itemId").and_then(|i| i.as_str()).unwrap_or("").to_string();
+            let command = params
+                .get("command")
+                .and_then(|c| c.as_str())
+                .unwrap_or("")
+                .to_string();
+            let cwd = params
+                .get("cwd")
+                .and_then(|c| c.as_str())
+                .unwrap_or("")
+                .to_string();
+            let reason = params
+                .get("reason")
+                .and_then(|r| r.as_str())
+                .unwrap_or("")
+                .to_string();
+            let item_id = params
+                .get("itemId")
+                .and_then(|i| i.as_str())
+                .unwrap_or("")
+                .to_string();
             let _ = events.send(EngineEvent::ApprovalRequest {
                 request_id: id,
                 kind: "command".into(),
@@ -34,8 +50,16 @@ pub(crate) async fn handle_server_request(
             });
         }
         "item/fileChange/requestApproval" => {
-            let item_id = params.get("itemId").and_then(|i| i.as_str()).unwrap_or("").to_string();
-            let reason = params.get("reason").and_then(|r| r.as_str()).unwrap_or("").to_string();
+            let item_id = params
+                .get("itemId")
+                .and_then(|i| i.as_str())
+                .unwrap_or("")
+                .to_string();
+            let reason = params
+                .get("reason")
+                .and_then(|r| r.as_str())
+                .unwrap_or("")
+                .to_string();
             let changes = params
                 .get("changes")
                 .map(|c| serde_json::to_string(c).unwrap_or_default())

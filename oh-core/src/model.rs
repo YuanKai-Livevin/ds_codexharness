@@ -30,7 +30,12 @@ pub enum EngineEvent {
     /// 命令输出增量。
     CommandOutput { item_id: String, output: String },
     /// 命令项结束。
-    CommandCompleted { item_id: String, command: String, status: String, output: String },
+    CommandCompleted {
+        item_id: String,
+        command: String,
+        status: String,
+        output: String,
+    },
     /// 文件变更项开始（含摘要）。
     FileChangeStarted { item_id: String, summary: String },
     /// 文件变更项结束。
@@ -48,7 +53,11 @@ pub enum EngineEvent {
     /// 审批请求已被服务端关闭（无需再等待）。
     ApprovalResolved { request_id: i64 },
     /// Windows 沙箱配置完成（真实结果）。
-    SandboxSetupResult { success: bool, mode: String, error: String },
+    SandboxSetupResult {
+        success: bool,
+        mode: String,
+        error: String,
+    },
     /// 本轮结束。
     TurnCompleted { status: String, usage: String },
     /// 引擎已停止。

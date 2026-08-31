@@ -6,10 +6,18 @@ use std::path::PathBuf;
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
-    let workspace = args.get(1).cloned().unwrap_or_else(|| "F:\\dshProject\\codexharness\\demo-workspace".into());
-    let key = args.get(2).cloned().unwrap_or_else(|| "sk-fake-auto-start-key".into());
+    let workspace = args
+        .get(1)
+        .cloned()
+        .unwrap_or_else(|| "F:\\dshProject\\codexharness\\demo-workspace".into());
+    let key = args
+        .get(2)
+        .cloned()
+        .unwrap_or_else(|| "sk-fake-auto-start-key".into());
 
-    let root = dirs::data_dir().unwrap_or_else(|| PathBuf::from(".")).join("OfficeHarness");
+    let root = dirs::data_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join("OfficeHarness");
     let settings_path = root.join("settings.json");
 
     let enc = dpapi::encrypt(&key).expect("encrypt");
@@ -21,7 +29,14 @@ fn main() {
     };
     settings.save(&settings_path).expect("save");
     println!("settings written to {}", settings_path.display());
-    println!("api_key_enc length: {}", settings.api_key_enc.as_deref().map(|s| s.len()).unwrap_or(0));
+    println!(
+        "api_key_enc length: {}",
+        settings
+            .api_key_enc
+            .as_deref()
+            .map(|s| s.len())
+            .unwrap_or(0)
+    );
     // 回读验证
     let loaded = AppSettings::load(&settings_path);
     let dec = dpapi::decrypt(loaded.api_key_enc.as_deref().unwrap()).expect("decrypt");

@@ -42,11 +42,14 @@ pub fn encrypt(plain: &str) -> Result<String, String> {
         };
 
         let bytes = plain.as_bytes();
-        let mut in_blob = CRYPT_INTEGER_BLOB {
+        let in_blob = CRYPT_INTEGER_BLOB {
             cbData: bytes.len() as u32,
             pbData: bytes.as_ptr() as *mut u8,
         };
-        let mut out_blob = CRYPT_INTEGER_BLOB { cbData: 0, pbData: std::ptr::null_mut() };
+        let mut out_blob = CRYPT_INTEGER_BLOB {
+            cbData: 0,
+            pbData: std::ptr::null_mut(),
+        };
         let ok = unsafe {
             CryptProtectData(
                 &in_blob,
@@ -85,11 +88,14 @@ pub fn decrypt(b64: &str) -> Result<String, String> {
         };
 
         let bytes = B64.decode(b64).map_err(|_| "密文格式错误".to_string())?;
-        let mut in_blob = CRYPT_INTEGER_BLOB {
+        let in_blob = CRYPT_INTEGER_BLOB {
             cbData: bytes.len() as u32,
             pbData: bytes.as_ptr() as *mut u8,
         };
-        let mut out_blob = CRYPT_INTEGER_BLOB { cbData: 0, pbData: std::ptr::null_mut() };
+        let mut out_blob = CRYPT_INTEGER_BLOB {
+            cbData: 0,
+            pbData: std::ptr::null_mut(),
+        };
         let ok = unsafe {
             CryptUnprotectData(
                 &in_blob,

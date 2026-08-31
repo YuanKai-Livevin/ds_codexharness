@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+    branches: [master, main]
+
+# T0-06 自动质量门禁：Rust fmt/clippy/test + Python office selftest/backend pytest + 前端语法检查。
+# 任一失败即阻止合并（配合 GitHub 分支保护把以下 check 设为 required）。
+
+jobs:
+  rust:
+    name: Rust 门禁（fmt / clippy / test）
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: rustfmt --check
+        run: cargo fmt --check
+      - name: clippy -D warnings
+        run: cargo clippy --workspace -- -D warnings
+      - name: cargo test
+        run: cargo test --workspace
+
+  python:
+    name: Python 门禁（office selftest / backend pytest）
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: 安装依赖
+        run: |
+          pip install -r backend/requirements.txt
+          pip install openpyxl python-docx python-pptx pypdf Pillow pytest httpx
+      - name: office-tools selftest（含 junction 越界用例）
+        shell: pwsh
+        run: |
+          $env:PYTHONIOENCODING="utf-8"
+          python tools/office-tools/otools.py selftest --root tools/office-tools
+      - name: backend pytest
+        run: python -m pytest backend/tests -q
+
+  frontend:
+    name: 前端语法检查
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: JS 语法检查
+        run: |
+          for f in app/assets/*.js; do node --check "$f"; done
+          echo "frontend ok"

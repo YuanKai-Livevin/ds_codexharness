@@ -58,7 +58,10 @@ pub fn classify_command(cmd: &str) -> Vec<Match> {
     let mut hits = Vec::new();
     for (pat, label) in DESTRUCTIVE_PREFIXES {
         if lower.contains(pat) {
-            hits.push(Match { pattern: pat.to_string(), label: label.to_string() });
+            hits.push(Match {
+                pattern: pat.to_string(),
+                label: label.to_string(),
+            });
         }
     }
     hits
@@ -69,7 +72,10 @@ pub fn classify_instruction(text: &str) -> Vec<Match> {
     let mut hits = Vec::new();
     for (kw, label) in DESTRUCTIVE_KEYWORDS {
         if text.contains(kw) {
-            hits.push(Match { pattern: kw.to_string(), label: label.to_string() });
+            hits.push(Match {
+                pattern: kw.to_string(),
+                label: label.to_string(),
+            });
         }
     }
     hits
