@@ -26,6 +26,12 @@ async function init() {
   $("#btn-test-conn").addEventListener("click", testConnection);
   $("#btn-send").addEventListener("click", send);
   $("#btn-interrupt").addEventListener("click", async () => {
+    // T0-05：启动中 → 点击即取消启动；任务运行中 → 中断当前回合
+    if (state.starting) {
+      await stopEngine();
+      toast("已取消启动");
+      return;
+    }
     try { await invoke("interrupt"); } catch (e) { /* ignore */ }
   });
   // 权限模式切换

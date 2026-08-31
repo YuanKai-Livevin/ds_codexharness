@@ -49,6 +49,8 @@ pub fn run() {
             // R6 结构化审计（SQLite）
             audit: services::audit::AuditStore::open(&root),
             current_task: Mutex::new(None),
+            // T0-05：启动事务取消标志
+            start_cancel: AtomicBool::new(false),
         })
         .invoke_handler(tauri::generate_handler![
             get_settings,

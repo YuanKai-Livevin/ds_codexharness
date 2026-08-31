@@ -39,8 +39,13 @@ pub(crate) async fn save_settings(state: State<'_, AppState>, settings: AppSetti
     // 校验工作区（必须是非空绝对路径的文件夹）
     let ws = workspace::ensure_workspace(&settings.workspace_path)?;
     let ws_str = ws.to_string_lossy().to_string();
-    // 若引擎在运行：先停止（设置变更需重启引擎生效，前端随后自动重启）
-    if state.engine_running.load(Ordering::SeqCst) {
+    // 若引擎在运行或正在启动：先停止（设置变更需重启引擎生效，前端随后自动重启）
+    let cur_st = *state.engine_state.lock().await;
+    if state.engine_running.load(Ordering::SeqCst) || cur_st == EngineState::Starting {
+        // T0-05：启动中 → 先取消启动事务
+        if cur_st == EngineState::Starting {
+            state.start_cancel.store(true, Ordering::SeqCst);
+        }
         // 同时停止模型网关（记忆服务保持运行，供面板继续使用）
         crate::services::memory_sidecar::stop_gateway(&state).await;
         let mut guard = state.engine.lock().await;

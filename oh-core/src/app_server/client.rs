@@ -203,7 +203,11 @@ impl CodexServer {
                 )
                 .await;
             }
-            // stdout 关闭
+            // stdout 关闭：fail 所有 pending 请求（立即返回，不必等 120s 超时）
+            let pend = std::mem::take(&mut *rpending.lock().await);
+            for (_, tx) in pend {
+                let _ = tx.send(Err(CodexError::NotRunning));
+            }
             let _ = retx.send(EngineEvent::EngineStopped);
             rrunning.store(false, Ordering::SeqCst);
         });

@@ -70,6 +70,8 @@ pub(crate) struct AppState {
     // R6 结构化审计
     pub(crate) audit: AuditStore,
     pub(crate) current_task: Mutex<Option<TaskCtx>>,
+    // T0-05：启动事务取消标志（Starting 期间 stop_engine 置位，启动流程步骤间检查并清理）
+    pub(crate) start_cancel: std::sync::atomic::AtomicBool,
 }
 
 /// 应用数据根目录：所有应用级配置/数据集中在一个目录便于管理。

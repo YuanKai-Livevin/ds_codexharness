@@ -67,6 +67,8 @@ async fn start_engine_inner_impl(
     }
     *state.engine_state.lock().await = EngineState::Starting;
     state.engine_running.store(false, Ordering::SeqCst);
+    // T0-05：新启动清除上次的取消标志（并发 start 已由 Starting 状态互斥）
+    state.start_cancel.store(false, Ordering::SeqCst);
     let settings = state.settings.lock().await.clone();
     let bundled = Bundled::new(app.path().resource_dir().ok().as_deref());
 
@@ -159,6 +161,12 @@ async fn start_engine_inner_impl(
         key.clone()
     };
 
+    // T0-05：启动取消检查（用户在 Starting 期间点停止）
+    if state.start_cancel.swap(false, Ordering::SeqCst) {
+        abort_startup(state).await;
+        return Err("启动已取消".to_string());
+    }
+
     // R6 审计：引擎启动记录（模型/网关/工作区；不含 Key）
     state.audit.record(
         None,
@@ -174,22 +182,41 @@ async fn start_engine_inner_impl(
         }),
     );
 
-    let mut server = CodexServer::spawn(&bundled, &state.codex_home, &settings, &engine_key)
-        .await
-        .map_err(|e| format!("启动引擎失败: {}", e))?;
+    let mut server = match CodexServer::spawn(&bundled, &state.codex_home, &settings, &engine_key).await {
+        Ok(s) => s,
+        Err(e) => {
+            abort_startup(state).await;
+            return Err(format!("启动引擎失败: {}", e));
+        }
+    };
 
-    server
-        .initialize()
-        .await
-        .map_err(|e| format!("初始化引擎失败: {}", e))?;
+    // T0-05：spawn 后再查一次取消（initialize 可能较慢，用户在等待时可取消）
+    if state.start_cancel.swap(false, Ordering::SeqCst) {
+        let _ = server.stop().await;
+        abort_startup(state).await;
+        return Err("启动已取消".to_string());
+    }
+
+    if let Err(e) = server.initialize().await {
+        let _ = server.stop().await;
+        abort_startup(state).await;
+        return Err(format!("初始化引擎失败: {}", e));
+    }
 
     // 注册 SKILLS 仓库为 codex 额外技能根
     let _ = server.register_skills_roots(&[skills_repo_str.clone()]).await;
 
-    let thread_id = server
+    let thread_id = match server
         .start_thread(&ws_str, &settings.sandbox_mode, &settings.model, &skills_repo_str)
         .await
-        .map_err(|e| format!("创建会话失败: {}", e))?;
+    {
+        Ok(t) => t,
+        Err(e) => {
+            let _ = server.stop().await;
+            abort_startup(state).await;
+            return Err(format!("创建会话失败: {}", e));
+        }
+    };
 
     // 事件转发任务（同时更新状态机：Busy/Ready/崩溃 Failed + 写入记忆水位 + R6 审计）
     let mut rx = server.take_events().ok_or("事件通道不可用")?;
@@ -360,6 +387,9 @@ async fn start_engine_inner_impl(
                         set_engine_state(&handle, EngineState::Stopped).await;
                     } else {
                         set_engine_state(&handle, EngineState::Failed).await;
+                        // T0-05：引擎崩溃 → 网关随引擎生命周期清理（避免孤儿网关进程）
+                        let ast = handle.state::<AppState>();
+                        crate::services::memory_sidecar::stop_gateway(&ast).await;
                         let _ = handle.emit(
                             "oh-event",
                             EngineEvent::Status {
@@ -427,6 +457,14 @@ async fn audit_workspace_or(st: &State<'_, AppState>) -> String {
     s.workspace_path
 }
 
+/// T0-05：启动事务失败/取消时统一清理：杀模型网关、清引擎槽位。
+/// 记忆服务保留（面板可用，失败不阻塞策略）；engine_state 由调用方置 Failed/Stopped。
+async fn abort_startup(state: &State<'_, AppState>) {
+    crate::services::memory_sidecar::stop_gateway(state).await;
+    *state.engine.lock().await = None;
+    *state.engine_pid.lock().await = None;
+}
+
 /// 种子内置 office-tools 技能到技能仓库：缺失或与内置版本内容不同时刷新（内置技能随版本升级）。
 fn seed_office_tools_skill(bundled: &Bundled, skills_repo: &std::path::Path) {
     let src = bundled.office_tools_dir();
@@ -485,6 +523,19 @@ pub(crate) async fn start_engine(
 
 #[tauri::command]
 pub(crate) async fn stop_engine(state: State<'_, AppState>) -> Result<(), String> {
+    let cur = *state.engine_state.lock().await;
+    if cur == EngineState::Starting {
+        // T0-05：取消启动中 —— 置取消标志，由启动事务在步骤间检查并清理
+        state.start_cancel.store(true, Ordering::SeqCst);
+        // 双保险：立即清理已登记的网关，并复位状态（启动事务检测到标志后不会再覆盖）
+        stop_gateway(&state).await;
+        *state.engine.lock().await = None;
+        *state.engine_pid.lock().await = None;
+        *state.engine_state.lock().await = EngineState::Stopped;
+        state.engine_running.store(false, Ordering::SeqCst);
+        state.audit.record(None, "engine", "engine_start_cancelled", serde_json::json!({}));
+        return Ok(());
+    }
     *state.engine_state.lock().await = EngineState::Stopping;
     // 停止模型网关（随引擎生命周期；记忆服务保持运行，供面板继续使用）
     stop_gateway(&state).await;

@@ -192,11 +192,12 @@ pub(crate) async fn spawn_gateway(
         ],
         &log_path,
     )?;
+    // T0-05：先登记 PID，health 失败时 stop 能杀掉进程，避免孤儿进程
+    *state.gateway_pid.lock().await = Some(pid);
     if !wait_ready(port, &token).await {
         let _ = stop_gateway(state).await;
         return Err(format!("模型网关启动后健康检查未通过（端口 {}）", port));
     }
-    *state.gateway_pid.lock().await = Some(pid);
     *state.gateway_port.lock().await = Some(port);
     Ok(port)
 }
@@ -244,11 +245,12 @@ pub(crate) async fn spawn_memory_server(
         ],
         &log_path,
     )?;
+    // T0-05：先登记 PID，health 失败时 stop 能杀掉进程，避免孤儿进程
+    *state.memory_pid.lock().await = Some(pid);
     if !wait_ready(port, &token).await {
         let _ = stop_memory_server(state).await;
         return Err(format!("记忆服务启动后健康检查未通过（端口 {}）", port));
     }
-    *state.memory_pid.lock().await = Some(pid);
     *state.memory_port.lock().await = Some(port);
     Ok(port)
 }

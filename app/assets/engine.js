@@ -32,20 +32,31 @@ function handleEvent(ev) {
   switch (ev.type) {
     case "status":
       setEngineChip(ev.state, ev.detail);
+      // T0-05：启动中状态跟踪（供「■ 停止」按钮取消启动）
+      state.starting = ev.state === "starting";
+      if (ev.state === "starting") {
+        showRunBar("正在启动引擎…（可点「■ 停止」取消）", null);
+      }
       if (ev.state === "running") {
         state.running = true;
+        hideRunBar();
         // 引擎就绪后加载记忆面板（自动启动路径下 boot 时服务可能还没起来，这里兜底重试）
         setupMemoryCard();
       }
       if (ev.state === "error") {
         state.running = false;
+        hideRunBar();
         toast(ev.detail || "引擎启动失败", "err");
         // 引导用户补全配置
         if (ev.detail && ev.detail.includes("API Key")) openSettings();
       }
       if (ev.state === "failed") {
         state.running = false;
+        hideRunBar();
         toast(ev.detail || "引擎异常退出", "err");
+      }
+      if (ev.state === "stopped") {
+        hideRunBar();
       }
       break;
     case "log":
@@ -382,14 +393,20 @@ async function startEngine() {
   } catch (e) { /* 查询失败继续尝试启动 */ }
   try {
     setEngineChip("starting", "");
+    state.starting = true;
+    showRunBar("正在启动引擎…（可点「■ 停止」取消）", null);
     await invoke("start_engine", { apiKey: key || "" });
     state.running = true;
+    state.starting = false;
     setEngineChip("running", "");
+    hideRunBar();
     toast("引擎已启动");
     setupMemoryCard(); // 记忆服务随引擎启动，加载内嵌面板
     return true;
   } catch (e) {
     state.running = false;
+    state.starting = false;
+    hideRunBar();
     setEngineChip("off", "");
     // 若提示缺 Key，引导打开设置
     const msg = String(e);
